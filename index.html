@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F7F2EA">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Familia">
+<title>Familia</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="period">
+        <h1 id="periodTitle"></h1>
+        <span id="periodSub" class="sub"></span>
+      </div>
+      <div class="nav">
+        <button class="icon-btn" data-act="prev" aria-label="Anterior">‹</button>
+        <button class="pill" data-act="today">Hoy</button>
+        <button class="icon-btn" data-act="next" aria-label="Siguiente">›</button>
+      </div>
+    </div>
+    <div class="topbar-row tools" id="planTools">
+      <div class="seg" id="viewSeg">
+        <button data-view="day">Día</button>
+        <button data-view="week">Semana</button>
+        <button data-view="month">Mes</button>
+      </div>
+      <div class="layers" id="layers"></div>
+    </div>
+  </header>
+
+  <main id="main"></main>
+
+  <button class="fab" id="fab" data-act="add" aria-label="Agregar">+</button>
+
+  <nav class="tabbar">
+    <button data-tab="plan"><span>📅</span>Plan</button>
+    <button data-tab="logros"><span>⭐</span>Logros</button>
+    <button data-tab="ajustes"><span>⚙️</span>Ajustes</button>
+  </nav>
+</div>
+
+<div id="sheetRoot"></div>
+<div id="toast" class="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
