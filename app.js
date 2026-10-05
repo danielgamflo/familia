@@ -33,7 +33,7 @@ const defaultCats = () => [
   { id: 'orden', name: 'Orden depto', emoji: '🧹', color: '#8AA07C', points: 10 },
   { id: 'ejercicio', name: 'Ejercicio', emoji: '💪', color: '#C47F7A', points: 20 },
   { id: 'reunion', name: 'Reunión', emoji: '💼', color: '#6E8CA8', points: 10 },
-  { id: 'grabacion', name: 'Grabación Ajava', emoji: '🎬', color: '#9B86B0', points: 20 },
+  { id: 'grabacion', name: 'Grabación Ahava', emoji: '🎬', color: '#9B86B0', points: 20 },
   { id: 'oracion', name: 'Oración', emoji: '🙏', color: '#B8A38A', points: 10 },
   { id: 'proyecto', name: 'Proyecto personal', emoji: '🌱', color: '#6FA3A0', points: 15 },
   { id: 'compras', name: 'Compras', emoji: '🛒', color: '#C8956B', points: 5 },
@@ -48,9 +48,9 @@ function seedEvents() {
     E('Oración de la mañana', 'a', 'oracion', d(0), '07:00', '07:20', { repeat: 'daily' }),
     E('Oración de la mañana', 'b', 'oracion', d(0), '07:30', '07:50', { repeat: 'daily' }),
     E('Gimnasio', 'a', 'ejercicio', d(0), '18:30', '19:30', { repeat: 'weekly', days: [1, 3, 5] }),
-    E('Yoga', 'b', 'ejercicio', d(1), '08:00', '09:00', { repeat: 'weekly', days: [2, 4] }),
+    E('Caminata', 'b', 'ejercicio', d(1), '08:00', '09:00', { repeat: 'weekly', days: [2, 4] }),
     E('Reunión de trabajo', 'a', 'reunion', d(1), '10:00', '11:00'),
-    E('Grabación Ajava', 'b', 'grabacion', d(2), '10:00', '14:00'),
+    E('Grabación Ahava', 'b', 'grabacion', d(2), '10:00', '14:00'),
     E('Compras de la semana', 'both', 'compras', d(5), '11:00', '12:30'),
     E('Cocinar para la semana', 'both', 'comida', d(6), '16:00', '18:00'),
     E('Ordenar el departamento', 'both', 'orden', d(5), '', '', { points: 15 }),
@@ -65,11 +65,16 @@ const defaultState = () => ({
   cats: defaultCats(),
   events: seedEvents(),
   settings: { dayLimit: 6, winStart: '08:00', winEnd: '22:00' },
-  ui: { tab: 'plan', view: 'week', layers: { a: true, b: true, both: true } }
+  ui: { tab: 'plan', view: 'week', layer: 'both' }
 });
 
 let S = Store.load() || defaultState();
-S.ui = { tab: 'plan', view: 'week', layers: { a: true, b: true, both: true }, ...S.ui };
+S.ui = { tab: 'plan', view: 'week', layer: 'both', ...S.ui };
+delete S.ui.layers;
+// migraciones de datos guardados antes de estos cambios
+S.events = (S.events || []).filter(e => !(e.demo && /yoga/i.test(e.title)));
+S.cats.forEach(c => { c.name = c.name.replace(/Ajava/g, 'Ahava'); });
+S.events.forEach(e => { e.title = e.title.replace(/Ajava/g, 'Ahava'); });
 let cursor = todayISO();
 const save = () => Store.save(S);
 
@@ -93,7 +98,7 @@ function itemsOn(d, all = false) {
   const out = [];
   for (const ev of S.events) {
     if (!occurs(ev, d)) continue;
-    if (!all && !S.ui.layers[ev.owner]) continue;
+    if (!all && S.ui.layer !== 'both' && ev.owner !== S.ui.layer && ev.owner !== 'both') continue;
     out.push({ ev, date: d, done: !!(ev.done && ev.done[d]), pts: ev.points ?? cat(ev.cat).points ?? 10 });
   }
   return out.sort((x, y) => (x.ev.start || '99').localeCompare(y.ev.start || '99'));
@@ -273,9 +278,9 @@ function renderAjustes() {
     <div class="catrow"><input class="inp" data-person="${k}" value="${esc(who(k).name)}" style="flex:1">
     <div class="row" style="flex-wrap:nowrap">${PALETTE.slice(0, 5).map(c => `<button class="swatch ${who(k).color === c ? 'on' : ''}" data-act="pcolor" data-k="${k}" data-c="${c}" style="background:${c}"></button>`).join('')}</div></div>`).join('')}
     <div class="hint">El color de cada persona se usa en las líneas y puntos del calendario.</div></div>
-  <div class="card fade"><h2>Categorías</h2><div id="cats">${S.cats.map(c => `
+  <div class="card fade"><h2>Categorías</h2><p class="hint" style="margin:-4px 0 10px">El número son los <b>puntos</b> que suma cada tarea de esa categoría al completarla. No limita cuántas veces la usas: eso lo decides al agregar cada cosa al calendario.</p><div class="catrow hint" style="margin:0 0 4px"><span style="width:52px;text-align:center">Emoji</span><span style="flex:1">Nombre</span><span style="width:62px">Puntos</span><span style="width:26px"></span><span style="width:34px"></span></div><div id="cats">${S.cats.map(c => `
     <div class="catrow" data-cat="${c.id}"><input class="inp" data-f="emoji" value="${esc(c.emoji)}" style="width:52px;text-align:center">
-    <input class="inp" data-f="name" value="${esc(c.name)}" style="flex:1;min-width:0"><input class="inp" data-f="points" type="number" min="0" value="${c.points}" style="width:62px" title="Puntos">
+    <input class="inp" data-f="name" value="${esc(c.name)}" style="flex:1;min-width:0"><input class="inp" data-f="points" type="number" min="0" value="${c.points}" style="width:62px" title="Puntos que suma cada vez que completas una tarea de esta categoría">
     <button class="swatch" data-act="ccolor" style="background:${c.color}" title="Cambiar color"></button>
     <button class="icon-btn" data-act="delcat" aria-label="Eliminar">×</button></div>`).join('')}</div>
     <div class="actions"><button class="btn ghost" data-act="addcat">+ Nueva categoría</button></div></div>
@@ -306,7 +311,7 @@ function render() {
   const [t, s] = periodTitle(); $('#periodTitle').textContent = t; $('#periodSub').textContent = s;
   $$('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.view === S.ui.view));
   $$('.tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  $('#layers').innerHTML = ['a', 'b', 'both'].map(k => `<button class="chip ${S.ui.layers[k] ? 'on' : ''}" data-act="layer" data-k="${k}" style="--c:${ownerColor(k)}"><i></i>${esc(who(k).name)}</button>`).join('');
+  $('#layers').innerHTML = ['a', 'b', 'both'].map(k => `<button class="chip ${S.ui.layer === k ? 'on' : ''}" data-act="layer" data-k="${k}" style="--c:${ownerColor(k)}"><i></i>${esc(who(k).name)}</button>`).join('');
   const y = window.scrollY;
   main.innerHTML = tab === 'logros' ? renderLogros() : tab === 'ajustes' ? renderAjustes() : S.ui.view === 'day' ? renderDay() : S.ui.view === 'week' ? renderWeek() : renderMonth();
   window.scrollTo(0, y);
@@ -405,7 +410,7 @@ const actions = {
   today: () => { cursor = todayISO(); render(); },
   add: () => eventSheet(null, S.ui.view === 'month' || S.ui.tab !== 'plan' ? todayISO() : S.ui.view === 'week' && !(cursor >= startOfWeek(todayISO()) && cursor <= addDays(startOfWeek(todayISO()), 6)) ? startOfWeek(cursor) : (S.ui.view === 'week' ? todayISO() : cursor)),
   closeSheet,
-  layer: el => { const k = el.dataset.k; S.ui.layers[k] = !S.ui.layers[k]; if (!Object.values(S.ui.layers).some(Boolean)) S.ui.layers[k] = true; save(); render(); },
+  layer: el => { S.ui.layer = el.dataset.k; save(); render(); },
   goDay: el => { cursor = el.dataset.date; S.ui.view = 'day'; save(); render(); window.scrollTo(0, 0); },
   edit: el => { const it = el.closest('.item'); const ev = S.events.find(e => e.id === it.dataset.id); ev && eventSheet(ev, it.dataset.date); },
   toggle: el => { const it = el.closest('.item'); toggleDone(it.dataset.id, it.dataset.date, el); },
