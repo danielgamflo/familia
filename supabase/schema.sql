@@ -50,6 +50,11 @@ create policy "miembros eventos" on public.events
   for all to authenticated
   using (public.is_member()) with check (public.is_member());
 
+-- Permisos de la API (las reglas de arriba siguen decidiendo quién ve qué).
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.events, public.config to authenticated;
+grant select on public.members to authenticated;
+
 -- Cambios en vivo entre los dos teléfonos.
 do $$
 begin
