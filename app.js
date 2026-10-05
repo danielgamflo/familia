@@ -82,6 +82,8 @@ const defaultState = () => ({
 });
 
 const IN_ARTIFACT = !!(window.claude && window.claude.use);
+const SB = window.FamiliaSupabase && window.FamiliaSupabase.configured ? window.FamiliaSupabase : null;
+const REMOTE = IN_ARTIFACT || !!SB;
 const clone = o => JSON.parse(JSON.stringify(o));
 const STABLE = o => JSON.stringify(o, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
 
@@ -114,11 +116,11 @@ function normalize() {
 }
 normalize();
 // En la versión sincronizada los eventos vienen de la nube; el respaldo local solo se usa sin conexión.
-if (IN_ARTIFACT) S.events = [];
+if (REMOTE) S.events = [];
 let cursor = todayISO();
 
 /* ───────── sincronización (Daniel y Cami) ───────── */
-const Sync = { status: IN_ARTIFACT ? 'connecting' : 'local', live: false, db: null, uid: null, canWrite: null, last: new Map(), cfg: '', cfgReady: false, q: Promise.resolve() };
+const Sync = { status: REMOTE ? 'connecting' : 'local', kind: SB ? 'supabase' : 'artifact', live: false, db: null, uid: null, canWrite: null, last: new Map(), cfg: '', cfgReady: false, q: Promise.resolve() };
 const cfgOf = () => ({ version: 2, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings });
 const ME_PATH = () => 'data/users/' + Sync.uid + '/profile';
 
@@ -152,15 +154,23 @@ function fallbackLocal() {
   Sync.status = 'local'; S.events = clone(cachedEvents); normalize(); paintSync(); render();
 }
 
+async function artifactBackend() {
+  const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+  if (!db) return null;
+  return { db, uid: user ? await user.id() : null, canWrite: user ? await user.can('data.write') : null };
+}
+
 async function initSync() {
-  if (!IN_ARTIFACT) return;
-  const timer = setTimeout(fallbackLocal, 9000);
+  if (!REMOTE) return;
+  const timer = setTimeout(fallbackLocal, 12000);
   try {
-    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
-    if (!db) { clearTimeout(timer); return fallbackLocal(); }
-    Sync.db = db;
-    Sync.uid = user ? await user.id() : null;
-    Sync.canWrite = user ? await user.can('data.write') : null;
+    const be = SB ? await SB.connect() : await artifactBackend();
+    if (SB && !be) { clearTimeout(timer); Sync.status = 'login'; render(); return loginScreen(); }
+    if (!be) { clearTimeout(timer); return fallbackLocal(); }
+    if (be.denied) { clearTimeout(timer); Sync.status = 'denied'; Sync.email = be.email; render(); return; }
+    const db = be.db;
+    Sync.db = db; Sync.uid = be.uid; Sync.canWrite = be.canWrite; Sync.email = be.email;
+    if (be.me) { S.ui.me = be.me; Store.save(S); }
     let askedMe = false;
     db.doc('meta/config').onSnapshot(snap => {
       if (snap.exists) {
@@ -181,7 +191,8 @@ async function initSync() {
       if (!snap.metadata.fromCache || snap.size) { clearTimeout(timer); Sync.live = true; Sync.status = 'live'; }
       paintSync(); Store.save(S); refresh();
     }, onSyncError);
-    if (Sync.uid) {
+    if (SB) { /* la identidad viene de la tabla members */ }
+    else if (Sync.uid) {
       db.doc(ME_PATH()).onSnapshot(snap => {
         const me = snap.exists && snap.data().me;
         if (me === 'a' || me === 'b') { S.ui.me = me; Store.save(S); refresh(); }
@@ -191,9 +202,29 @@ async function initSync() {
   } catch (e) { clearTimeout(timer); fallbackLocal(); }
 }
 
+function loginScreen(msg) {
+  let el = $('#login'); if (!el) { el = document.createElement('div'); el.id = 'login'; document.body.appendChild(el); }
+  el.className = 'login';
+  el.innerHTML = `<form class="login-card" id="loginForm"><div class="login-logo">📅</div><h2>Familia</h2><p class="hint">Entra con tu correo para ver y editar el plan de Daniel y Cami.</p>
+    <div class="field"><label for="lg-email">Correo</label><input class="inp" id="lg-email" type="email" autocomplete="email" required></div>
+    <div class="field"><label for="lg-pass">Contraseña</label><input class="inp" id="lg-pass" type="password" autocomplete="current-password" minlength="6" required></div>
+    <p class="login-msg" id="lg-msg">${esc(msg || '')}</p>
+    <div class="actions"><button class="btn ghost" type="button" id="lg-up">Crear cuenta</button><button class="btn" type="submit" id="lg-in">Entrar</button></div></form>`;
+  const msgEl = $('#lg-msg', el), say = t => { msgEl.textContent = t; };
+  const creds = () => ({ email: $('#lg-email', el).value.trim(), password: $('#lg-pass', el).value });
+  const nice = e => /invalid login/i.test(e.message) ? 'Correo o contraseña incorrectos.' : /already/i.test(e.message) ? 'Ese correo ya tiene cuenta. Usa Entrar.' : /password/i.test(e.message) ? 'La contraseña debe tener al menos 6 caracteres.' : /confirm/i.test(e.message) ? 'Confirma tu correo desde el mensaje que te llegó.' : 'No se pudo conectar. Revisa tu conexión.';
+  const done = () => { el.remove(); Sync.status = 'connecting'; render(); initSync(); };
+  $('#loginForm', el).onsubmit = async ev => { ev.preventDefault(); const c = creds(); say('Entrando…'); try { await SB.signIn(c.email, c.password); done(); } catch (e) { say(nice(e)); } };
+  $('#lg-up', el).onclick = async () => {
+    const c = creds(); if (!c.email || c.password.length < 6) return say('Escribe tu correo y una contraseña de al menos 6 caracteres.');
+    say('Creando cuenta…');
+    try { const r = await SB.signUp(c.email, c.password); if (r.session) done(); else say('Cuenta creada. Revisa tu correo para confirmarla y luego toca Entrar.'); } catch (e) { say(nice(e)); }
+  };
+}
+
 function setMe(k) {
   S.ui.me = k; Store.save(S);
-  if (Sync.live && Sync.uid) Sync.db.doc(ME_PATH()).set({ me: k }).catch(() => {});
+  if (Sync.live && Sync.uid && !SB) Sync.db.doc(ME_PATH()).set({ me: k }).catch(() => {});
   closeSheet(); render();
 }
 
@@ -205,7 +236,7 @@ function identitySheet() {
 
 function paintSync() {
   const el = $('#syncdot'); if (!el) return;
-  const m = { connecting: ['Conectando…', 'c'], live: ['En vivo: Daniel y Cami ven lo mismo', 'l'], local: ['Solo en este dispositivo', 'o'], error: ['Sin conexión: no se guardó', 'e'] }[Sync.status];
+  const m = { login: ['Inicia sesión', 'c'], denied: ['Correo no autorizado', 'e'], connecting: ['Conectando…', 'c'], live: ['En vivo: Daniel y Cami ven lo mismo', 'l'], local: ['Solo en este dispositivo', 'o'], error: ['Sin conexión: no se guardó', 'e'] }[Sync.status];
   el.className = 'syncdot ' + m[1]; el.title = m[0];
 }
 
@@ -465,7 +496,8 @@ function renderLogros() {
 function renderAjustes() {
   const st = { live: 'En vivo. Lo que agregue cada uno lo ve el otro al instante.', connecting: 'Conectando…', local: 'Solo en este dispositivo: lo que agregues aquí no lo ve el otro.', error: 'Sin conexión: los cambios no se están guardando.' }[Sync.status];
   return `<div class="card fade"><h2>Sincronización</h2><p style="margin:0 0 12px"><i class="syncdot ${{ live: 'l', connecting: 'c', local: 'o', error: 'e' }[Sync.status]}" style="position:static;display:inline-block;margin-right:8px"></i>${st}</p>
-    <div class="field" style="margin:0"><label>En este teléfono soy</label><div class="row">${['a', 'b'].map(k => `<button class="opt ${S.ui.me === k ? 'on' : ''}" style="--c:${ownerColor(k)}" data-act="setme" data-k="${k}">${esc(who(k).name)}</button>`).join('')}</div></div></div>
+    <div class="field" style="margin:0;${SB ? 'display:none' : ''}"><label>En este teléfono soy</label><div class="row">${['a', 'b'].map(k => `<button class="opt ${S.ui.me === k ? 'on' : ''}" style="--c:${ownerColor(k)}" data-act="setme" data-k="${k}">${esc(who(k).name)}</button>`).join('')}</div></div></div>
+  ${SB && Sync.email ? `<div class="card fade"><h2>Cuenta</h2><p style="margin:0 0 12px">${esc(Sync.email)}</p><div class="actions"><button class="btn ghost" data-act="signout">Cerrar sesión</button></div></div>` : ''}
   <div class="card fade"><h2>Personas</h2>${['a', 'b'].map(k => `
     <div class="catrow"><input class="inp" data-person="${k}" value="${esc(who(k).name)}" style="flex:1">
     <div class="row" style="flex-wrap:nowrap">${PALETTE.slice(0, 5).map(c => `<button class="swatch ${who(k).color === c ? 'on' : ''}" data-act="pcolor" data-k="${k}" data-c="${c}" style="background:${c}"></button>`).join('')}</div></div>`).join('')}
@@ -508,6 +540,8 @@ function render() {
   const y = window.scrollY;
   const ro = Sync.canWrite === false ? `<div class="insight warn fade"><div class="emoji">👀</div><div><p>Solo puedes mirar<small>Pídele a Daniel que te dé acceso de editor para poder agregar y marcar cosas.</small></p></div></div>` : '';
   if (Sync.status === 'connecting') { main.innerHTML = '<div class="card empty fade">Conectando con la nube…</div>'; paintSync(); return; }
+  if (Sync.status === 'login') { main.innerHTML = '<div class="card empty fade">Inicia sesión para ver el plan.</div>'; paintSync(); return; }
+  if (Sync.status === 'denied') { main.innerHTML = `<div class="card fade"><h2>Correo no autorizado</h2><p style="margin:0 0 14px">${esc(Sync.email || '')} no está en la lista de Daniel y Cami. Entra con el correo que se registró en la configuración.</p><div class="actions"><button class="btn" data-act="signout">Cerrar sesión</button></div></div>`; paintSync(); return; }
   main.innerHTML = ro + (tab === 'logros' ? renderLogros() : tab === 'ajustes' ? renderAjustes() : S.ui.view === 'day' ? renderDay() : S.ui.view === 'week' ? renderWeek() : renderMonth());
   paintSync();
   window.scrollTo(0, y);
@@ -658,6 +692,7 @@ const actions = {
   delcat: el => { const id = el.closest('[data-cat]').dataset.cat; if (S.cats.length <= 1) return toast('Debe quedar al menos una categoría'); const rm = () => { S.cats = S.cats.filter(c => c.id !== id); save(); render(); }; S.events.some(e => e.cat === id) ? confirmSheet('Hay eventos con esta categoría. Se mostrarán como "Otro".', 'Eliminar', rm) : rm(); },
   addcat: () => { S.cats.push({ id: 'c' + uid(), name: 'Nueva', emoji: '✨', area: 'otros', points: 10 }); save(); render(); },
   setme: el => setMe(el.dataset.k),
+  signout: async () => { try { await SB.signOut(); } catch { /* sin conexión */ } Store.save({ ...S, events: [] }); location.reload(); },
   cleardemo: () => { S.events = S.events.filter(e => !e.demo); save(); render(); toast('Ejemplos eliminados'); },
   reset: () => confirmSheet(Sync.live ? '¿Borrar todos los eventos de Daniel y Cami?' : '¿Borrar todos los datos de este dispositivo?', 'Borrar todo', () => { const ui = S.ui, people = S.people; S = defaultState(); S.ui = ui; S.people = people; S.events = []; save(); render(); toast('Todo borrado'); }),
   export: () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' })); a.download = `familia-${todayISO()}.json`; a.click(); },
