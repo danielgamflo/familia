@@ -179,3 +179,9 @@ button.insight.alert{width:100%;text-align:left;border:0;font:inherit;color:inhe
 .catbox{background:var(--soft);border-radius:14px;padding:10px;margin-bottom:8px;display:grid;gap:8px}
 .catbox .catrow{margin:0}
 select.inp{appearance:auto}
+
+/* sincronización */
+.syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#B8AA9A;vertical-align:middle;margin-left:4px}
+.syncdot.l{background:var(--both)}.syncdot.c{background:var(--gold);animation:pulse 1s infinite}.syncdot.e{background:#B5524B}
+@keyframes pulse{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.syncdot.c{animation:none}}

@@ -81,28 +81,133 @@ const defaultState = () => ({
   ui: { tab: 'plan', view: 'week', layer: 'both' }
 });
 
+const IN_ARTIFACT = !!(window.claude && window.claude.use);
+const clone = o => JSON.parse(JSON.stringify(o));
+const STABLE = o => JSON.stringify(o, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
+
 let S = Store.load() || defaultState();
-S.ui = { tab: 'plan', view: 'week', layer: 'both', ...S.ui };
-delete S.ui.layers;
-// migraciones de datos guardados antes de estos cambios
-S.events = (S.events || []).filter(e => !(e.demo && /yoga/i.test(e.title)));
-S.cats.forEach(c => { c.name = c.name.replace(/Ajava/g, 'Ahava'); });
-S.events.forEach(e => { e.title = e.title.replace(/Ajava/g, 'Ahava'); });
-if (!S.areas) {
-  S.areas = defaultAreas();
-  const fresh = defaultCats(), byId = Object.fromEntries(fresh.map(c => [c.id, c]));
-  S.cats.forEach(c => { c.area = (byId[c.id] || {}).area || 'otros'; delete c.color; });
-  fresh.forEach(c => { if (!S.cats.some(x => x.id === c.id)) S.cats.push(c); });
+const cachedEvents = clone(S.events || []);
+
+// Deja el estado en el formato actual (también se aplica a lo que llega de la nube).
+function normalize() {
+  S.ui = { tab: 'plan', view: 'week', layer: 'both', ...S.ui };
+  delete S.ui.layers;
+  S.people = S.people || defaultState().people;
+  S.settings = { dayLimit: 6, winStart: '08:00', winEnd: '22:00', ...S.settings };
+  S.cats = S.cats || defaultCats();
+  S.events = (S.events || []).filter(e => !(e.demo && /yoga/i.test(e.title)));
+  S.cats.forEach(c => { c.name = c.name.replace(/Ajava/g, 'Ahava'); });
+  S.events.forEach(e => { e.title = e.title.replace(/Ajava/g, 'Ahava'); });
+  if (!S.areas) {
+    S.areas = defaultAreas();
+    const fresh = defaultCats(), byId = Object.fromEntries(fresh.map(c => [c.id, c]));
+    S.cats.forEach(c => { c.area = (byId[c.id] || {}).area || 'otros'; delete c.color; });
+    fresh.forEach(c => { if (!S.cats.some(x => x.id === c.id)) S.cats.push(c); });
+  }
+  S.cats.forEach(c => { if (!S.areas.some(a => a.id === c.area)) c.area = 'otros'; });
+  if (!S.areas.some(a => a.id === 'otros')) S.areas.push(defaultAreas().pop());
+  // estado de cada ocurrencia: ev.res[fecha] = done | missed | cancelled | moved
+  S.events.forEach(e => {
+    e.res = e.res || {};
+    if (e.done) { Object.keys(e.done).forEach(d => { if (e.done[d]) e.res[d] = 'done'; }); delete e.done; }
+  });
 }
-S.cats.forEach(c => { if (!S.areas.some(a => a.id === c.area)) c.area = 'otros'; });
-if (!S.areas.some(a => a.id === 'otros')) S.areas.push(defaultAreas().pop());
-// estado de cada ocurrencia: ev.res[fecha] = done | missed | cancelled | moved
-S.events.forEach(e => {
-  e.res = e.res || {};
-  if (e.done) { Object.keys(e.done).forEach(d => { if (e.done[d]) e.res[d] = 'done'; }); delete e.done; }
-});
+normalize();
+// En la versión sincronizada los eventos vienen de la nube; el respaldo local solo se usa sin conexión.
+if (IN_ARTIFACT) S.events = [];
 let cursor = todayISO();
-const save = () => Store.save(S);
+
+/* ───────── sincronización (Daniel y Cami) ───────── */
+const Sync = { status: IN_ARTIFACT ? 'connecting' : 'local', live: false, db: null, uid: null, canWrite: null, last: new Map(), cfg: '', cfgReady: false, q: Promise.resolve() };
+const cfgOf = () => ({ version: 2, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings });
+const ME_PATH = () => 'data/users/' + Sync.uid + '/profile';
+
+function onSyncError(e) {
+  Sync.status = 'error'; paintSync();
+  toast(Sync.canWrite === false ? 'Solo lectura: pide acceso de editor' : 'No se pudo guardar. Revisa tu conexión');
+  console.error(e);
+}
+
+// Compara el estado con lo último sincronizado y escribe solo lo que cambió.
+function flush() {
+  if (!Sync.live) return;
+  const db = Sync.db, cur = new Map(S.events.map(e => [e.id, STABLE(e)])), ops = [];
+  cur.forEach((str, id) => { if (Sync.last.get(id) !== str) { Sync.last.set(id, str); ops.push(() => db.doc('events/' + id).set(JSON.parse(str))); } });
+  [...Sync.last.keys()].forEach(id => { if (!cur.has(id)) { Sync.last.delete(id); ops.push(() => db.doc('events/' + id).delete()); } });
+  const c = STABLE(cfgOf());
+  if (Sync.cfgReady && c !== Sync.cfg) { Sync.cfg = c; ops.push(() => db.doc('meta/config').set(JSON.parse(c))); }
+  ops.forEach(op => { Sync.q = Sync.q.then(op).catch(onSyncError); });
+}
+
+const save = () => { Store.save(S); flush(); };
+
+function refresh() {
+  const a = document.activeElement;
+  if (a && main.contains(a) && /INPUT|SELECT|TEXTAREA/.test(a.tagName)) return;
+  render();
+}
+
+function fallbackLocal() {
+  if (Sync.status !== 'connecting') return;
+  Sync.status = 'local'; S.events = clone(cachedEvents); normalize(); paintSync(); render();
+}
+
+async function initSync() {
+  if (!IN_ARTIFACT) return;
+  const timer = setTimeout(fallbackLocal, 9000);
+  try {
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    if (!db) { clearTimeout(timer); return fallbackLocal(); }
+    Sync.db = db;
+    Sync.uid = user ? await user.id() : null;
+    Sync.canWrite = user ? await user.can('data.write') : null;
+    let askedMe = false;
+    db.doc('meta/config').onSnapshot(snap => {
+      if (snap.exists) {
+        const d = clone(snap.data());
+        S.people = d.people || S.people; S.areas = d.areas; S.cats = d.cats || S.cats; S.settings = d.settings || S.settings;
+        normalize(); Sync.cfg = STABLE(cfgOf()); Sync.cfgReady = true;
+      } else if (!snap.metadata.fromCache && !Sync.cfgReady) {
+        // Primer uso: se crea la configuración y se suben los eventos propios (no los de ejemplo).
+        Sync.cfgReady = true; Sync.cfg = STABLE(cfgOf());
+        const init = { ...clone(cfgOf()), init: true };
+        Sync.q = Sync.q.then(() => db.doc('meta/config').set(init)).then(() => Promise.all(cachedEvents.filter(e => !e.demo).map(e => { const ev = clone(e); return db.doc('events/' + ev.id).set(ev); }))).catch(onSyncError);
+      }
+      Store.save(S); refresh();
+    }, onSyncError);
+    db.collection('events').onSnapshot(snap => {
+      S.events = snap.docs.map(d => clone(d.data())); normalize();
+      Sync.last = new Map(S.events.map(e => [e.id, STABLE(e)]));
+      if (!snap.metadata.fromCache || snap.size) { clearTimeout(timer); Sync.live = true; Sync.status = 'live'; }
+      paintSync(); Store.save(S); refresh();
+    }, onSyncError);
+    if (Sync.uid) {
+      db.doc(ME_PATH()).onSnapshot(snap => {
+        const me = snap.exists && snap.data().me;
+        if (me === 'a' || me === 'b') { S.ui.me = me; Store.save(S); refresh(); }
+        else if (!snap.metadata.fromCache && !S.ui.me && !askedMe) { askedMe = true; identitySheet(); }
+      }, () => {});
+    } else if (!S.ui.me) identitySheet();
+  } catch (e) { clearTimeout(timer); fallbackLocal(); }
+}
+
+function setMe(k) {
+  S.ui.me = k; Store.save(S);
+  if (Sync.live && Sync.uid) Sync.db.doc(ME_PATH()).set({ me: k }).catch(() => {});
+  closeSheet(); render();
+}
+
+function identitySheet() {
+  openSheet(`<h3>¿Quién eres?</h3><p class="hint" style="margin:-8px 0 14px">Así sabemos qué es tuyo y de quién es cada racha en este teléfono. Solo se pregunta una vez.</p>
+    <div class="outcomes">${['a', 'b'].map(k => `<button class="out" data-me="${k}" style="border-color:${ownerColor(k)}"><b>${esc(who(k).name)}</b><small>Soy ${esc(who(k).name)}</small></button>`).join('')}</div>`,
+    sh => { sh.onclick = e => { const b = e.target.closest('[data-me]'); if (b) setMe(b.dataset.me); }; });
+}
+
+function paintSync() {
+  const el = $('#syncdot'); if (!el) return;
+  const m = { connecting: ['Conectando…', 'c'], live: ['En vivo: Daniel y Cami ven lo mismo', 'l'], local: ['Solo en este dispositivo', 'o'], error: ['Sin conexión: no se guardó', 'e'] }[Sync.status];
+  el.className = 'syncdot ' + m[1]; el.title = m[0];
+}
 
 const area = id => S.areas.find(a => a.id === id) || S.areas[S.areas.length - 1];
 const cat = id => {
@@ -336,7 +441,7 @@ function renderLogros() {
   const t = todayISO(), ws = startOfWeek(t), we = addDays(ws, 6), all0 = earliest();
   const A = pointsFor('a', ws, we), B = pointsFor('b', ws, we), T = teamPoints(ws, we), plan = plannedPoints(ws, we);
   const total = teamPoints(all0, t), lv = level(total);
-  const person = (k, pts) => `<div class="card score fade"><div class="who"><i style="background:${ownerColor(k)}"></i>${esc(who(k).name)}</div><div class="big">${pts}</div><div class="stars">${stars(pts)}</div><small>🔥 Racha ${streak(k)} día${streak(k) === 1 ? '' : 's'}</small></div>`;
+  const person = (k, pts) => `<div class="card score fade"><div class="who"><i style="background:${ownerColor(k)}"></i>${esc(who(k).name)}${S.ui.me === k ? ' (tú)' : ''}</div><div class="big">${pts}</div><div class="stars">${stars(pts)}</div><small>🔥 Racha ${streak(k)} día${streak(k) === 1 ? '' : 's'}</small></div>`;
   const hist = [...Array(7)].map((_, i) => { const d = addDays(ws, i); return { d, p: teamPoints(d, d) }; }), mx = Math.max(20, ...hist.map(h => h.p));
   const allDone = itemsBetween(all0, t).filter(i => i.done).length;
   const badges = [
@@ -358,7 +463,10 @@ function renderLogros() {
 }
 
 function renderAjustes() {
-  return `<div class="card fade"><h2>Personas</h2>${['a', 'b'].map(k => `
+  const st = { live: 'En vivo. Lo que agregue cada uno lo ve el otro al instante.', connecting: 'Conectando…', local: 'Solo en este dispositivo: lo que agregues aquí no lo ve el otro.', error: 'Sin conexión: los cambios no se están guardando.' }[Sync.status];
+  return `<div class="card fade"><h2>Sincronización</h2><p style="margin:0 0 12px"><i class="syncdot ${{ live: 'l', connecting: 'c', local: 'o', error: 'e' }[Sync.status]}" style="position:static;display:inline-block;margin-right:8px"></i>${st}</p>
+    <div class="field" style="margin:0"><label>En este teléfono soy</label><div class="row">${['a', 'b'].map(k => `<button class="opt ${S.ui.me === k ? 'on' : ''}" style="--c:${ownerColor(k)}" data-act="setme" data-k="${k}">${esc(who(k).name)}</button>`).join('')}</div></div></div>
+  <div class="card fade"><h2>Personas</h2>${['a', 'b'].map(k => `
     <div class="catrow"><input class="inp" data-person="${k}" value="${esc(who(k).name)}" style="flex:1">
     <div class="row" style="flex-wrap:nowrap">${PALETTE.slice(0, 5).map(c => `<button class="swatch ${who(k).color === c ? 'on' : ''}" data-act="pcolor" data-k="${k}" data-c="${c}" style="background:${c}"></button>`).join('')}</div></div>`).join('')}
     <div class="hint">El color de cada persona se usa en las líneas y puntos del calendario.</div></div>
@@ -374,7 +482,7 @@ function renderAjustes() {
     <div class="row"><div class="field" style="flex:1"><label>Día empieza</label><input class="inp" type="time" id="winStart" value="${S.settings.winStart}"></div><div class="field" style="flex:1"><label>Día termina</label><input class="inp" type="time" id="winEnd" value="${S.settings.winEnd}"></div></div>
     <div class="hint">Se usan para calcular los huecos libres que tienen juntos.</div></div>
   <div class="card fade"><h2>Datos</h2>
-    <p class="hint" style="margin-top:0">Por ahora los datos viven solo en este dispositivo. El siguiente paso es sincronizarlos en la nube para que Cami los vea en el suyo.</p>
+    <p class="hint" style="margin-top:0">${Sync.live ? 'Los datos se guardan en la nube y los ven los dos. Borrar o quitar ejemplos afecta a ambos.' : 'Los datos de este dispositivo se guardan solo aquí.'}</p>
     <div class="actions" style="flex-wrap:wrap"><button class="btn ghost" data-act="export">Exportar</button><button class="btn ghost" data-act="import">Importar</button><button class="btn ghost" data-act="cleardemo">Quitar ejemplos</button></div>
     <div class="actions"><button class="btn danger" data-act="reset">Borrar todo</button></div></div>`;
 }
@@ -398,7 +506,10 @@ function render() {
   $$('.tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   $('#layers').innerHTML = ['a', 'b', 'both'].map(k => `<button class="chip ${S.ui.layer === k ? 'on' : ''}" data-act="layer" data-k="${k}" style="--c:${ownerColor(k)}"><i></i>${esc(who(k).name)}</button>`).join('');
   const y = window.scrollY;
-  main.innerHTML = tab === 'logros' ? renderLogros() : tab === 'ajustes' ? renderAjustes() : S.ui.view === 'day' ? renderDay() : S.ui.view === 'week' ? renderWeek() : renderMonth();
+  const ro = Sync.canWrite === false ? `<div class="insight warn fade"><div class="emoji">👀</div><div><p>Solo puedes mirar<small>Pídele a Daniel que te dé acceso de editor para poder agregar y marcar cosas.</small></p></div></div>` : '';
+  if (Sync.status === 'connecting') { main.innerHTML = '<div class="card empty fade">Conectando con la nube…</div>'; paintSync(); return; }
+  main.innerHTML = ro + (tab === 'logros' ? renderLogros() : tab === 'ajustes' ? renderAjustes() : S.ui.view === 'day' ? renderDay() : S.ui.view === 'week' ? renderWeek() : renderMonth());
+  paintSync();
   window.scrollTo(0, y);
 }
 
@@ -412,7 +523,7 @@ function openSheet(html, mount) {
 
 function eventSheet(ev, date) {
   const isNew = !ev;
-  const dr = ev ? JSON.parse(JSON.stringify(ev)) : { id: uid(), title: '', owner: 'both', cat: S.cats[0].id, date, start: '', end: '', repeat: 'none', days: [], res: {} };
+  const dr = ev ? JSON.parse(JSON.stringify(ev)) : { id: uid(), title: '', owner: S.ui.me || 'both', cat: S.cats[0].id, date, start: '', end: '', repeat: 'none', days: [], res: {} };
   let timed = !!dr.start;
   const draw = () => {
     const c = cat(dr.cat);
@@ -546,10 +657,11 @@ const actions = {
   delarea: el => { const id = el.closest('[data-area]').dataset.area; if (id === 'otros') return toast('El área Otros no se puede eliminar'); if (S.cats.some(c => c.area === id)) return toast('Mueve sus categorías a otra área primero'); S.areas = S.areas.filter(a => a.id !== id); save(); render(); },
   delcat: el => { const id = el.closest('[data-cat]').dataset.cat; if (S.cats.length <= 1) return toast('Debe quedar al menos una categoría'); const rm = () => { S.cats = S.cats.filter(c => c.id !== id); save(); render(); }; S.events.some(e => e.cat === id) ? confirmSheet('Hay eventos con esta categoría. Se mostrarán como "Otro".', 'Eliminar', rm) : rm(); },
   addcat: () => { S.cats.push({ id: 'c' + uid(), name: 'Nueva', emoji: '✨', area: 'otros', points: 10 }); save(); render(); },
+  setme: el => setMe(el.dataset.k),
   cleardemo: () => { S.events = S.events.filter(e => !e.demo); save(); render(); toast('Ejemplos eliminados'); },
-  reset: () => confirmSheet('¿Borrar todos los datos de este dispositivo?', 'Borrar todo', () => { S = defaultState(); S.events = []; save(); render(); toast('Todo borrado'); }),
+  reset: () => confirmSheet(Sync.live ? '¿Borrar todos los eventos de Daniel y Cami?' : '¿Borrar todos los datos de este dispositivo?', 'Borrar todo', () => { const ui = S.ui, people = S.people; S = defaultState(); S.ui = ui; S.people = people; S.events = []; save(); render(); toast('Todo borrado'); }),
   export: () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' })); a.download = `familia-${todayISO()}.json`; a.click(); },
-  import: () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'application/json'; i.onchange = async () => { try { const d = JSON.parse(await i.files[0].text()); if (!d.events || !d.cats) throw 0; S = d; save(); render(); toast('Importado ✓'); } catch { toast('Archivo no válido'); } }; i.click(); }
+  import: () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'application/json'; i.onchange = async () => { try { const d = JSON.parse(await i.files[0].text()); if (!d.events || !d.cats) throw 0; d.ui = S.ui; S = d; normalize(); save(); render(); toast('Importado ✓'); } catch { toast('Archivo no válido'); } }; i.click(); }
 };
 
 document.addEventListener('click', e => {
@@ -580,6 +692,7 @@ main.addEventListener('touchend', e => {
 });
 
 render();
-save();
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+Store.save(S);
+initSync();
+if (!IN_ARTIFACT && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
