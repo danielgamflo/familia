@@ -191,3 +191,8 @@ select.inp{appearance:auto}
 .login-card{width:100%;max-width:380px;background:var(--card);border-radius:24px;box-shadow:var(--shadow);padding:26px 22px}
 .login-card h2{margin:6px 0 4px;font-size:26px;text-transform:none;letter-spacing:-.02em;color:var(--ink)}
 .login-logo{font-size:38px}.login-msg{min-height:20px;margin:0 0 8px;font-size:13px;color:#B5524B}
+
+/* sin zoom: iOS hace zoom solo si el texto de un campo mide menos de 16px */
+html{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%}
+.inp,input,select,textarea{font-size:16px}
+button{touch-action:manipulation}
