@@ -1,4 +1,4 @@
-const CACHE = 'familia-v8';
+const CACHE = 'familia-v9';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'supabase-adapter.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/apple-icon-v2-180.png', 'icons/app-icon-v2-192.png', 'icons/app-icon-v2-512.png'];
 
 self.addEventListener('install', e => {

@@ -39,9 +39,7 @@ const defaultAreas = () => [
 ];
 // Las áreas agrupan categorías y se usan para medir el crecimiento. El color del tema viene del área.
 const defaultCats = () => [
-  { id: 'oracion', name: 'Oración', emoji: '🙏', area: 'espiritual', points: 10 },
-  { id: 'biblia', name: 'Lectura bíblica', emoji: '📖', area: 'espiritual', points: 10 },
-  { id: 'ayuno', name: 'Ayuno', emoji: '🌾', area: 'espiritual', points: 15 },
+  { id: 'oracion', name: 'Tiempo con Dios', emoji: '🙏', area: 'espiritual', points: 10 },
   { id: 'salida', name: 'Salida', emoji: '🥂', area: 'relaciones', points: 5, auto: true },
   { id: 'juntas', name: 'Amigos y familia', emoji: '👥', area: 'relaciones', points: 10, auto: true },
   { id: 'ejercicio', name: 'Ejercicio', emoji: '💪', area: 'salud', points: 20 },
@@ -101,6 +99,7 @@ function normalize() {
   S.people = S.people || defaultState().people;
   S.settings = { dayLimit: 6, winStart: '08:00', winEnd: '22:00', compete: ['espiritual', 'salud'], ...S.settings };
   S.pacts = S.pacts || {};
+  S.aliases = S.aliases || {};
   S.cats = S.cats || defaultCats();
   S.events = (S.events || []).filter(e => !(e.demo && /yoga/i.test(e.title)));
   S.cats.forEach(c => { c.name = c.name.replace(/Ajava/g, 'Ahava'); });
@@ -127,6 +126,14 @@ function normalize() {
     });
     S.version = 3;
   }
+  if ((S.version || 0) < 4) {
+    const dest = S.cats.find(c => c.id === 'oracion');
+    if (dest) {
+      ['biblia', 'ayuno'].forEach(id => { if (S.cats.some(c => c.id === id)) { S.aliases[id] = 'oracion'; S.cats = S.cats.filter(c => c.id !== id); } });
+      if (dest.name === 'Oración') dest.name = 'Tiempo con Dios';
+    }
+    S.version = 4;
+  }
   // estado de cada ocurrencia: ev.res[fecha] = done | missed | cancelled | moved
   S.events.forEach(e => {
     e.res = e.res || {};
@@ -140,7 +147,7 @@ let cursor = todayISO();
 
 /* ───────── sincronización (Daniel y Cami) ───────── */
 const Sync = { status: REMOTE ? 'connecting' : 'local', kind: SB ? 'supabase' : 'artifact', live: false, db: null, uid: null, canWrite: null, last: new Map(), cfg: '', cfgReady: false, q: Promise.resolve() };
-const cfgOf = () => ({ version: S.version || 3, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings, pacts: S.pacts });
+const cfgOf = () => ({ aliases: S.aliases, version: S.version || 3, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings, pacts: S.pacts });
 const ME_PATH = () => 'data/users/' + Sync.uid + '/profile';
 
 function onSyncError(e) {
@@ -194,7 +201,7 @@ async function initSync() {
     db.doc('meta/config').onSnapshot(snap => {
       if (snap.exists) {
         const d = clone(snap.data());
-        S.people = d.people || S.people; S.areas = d.areas; S.cats = d.cats || S.cats; S.settings = d.settings || S.settings; S.pacts = d.pacts || {};
+        S.people = d.people || S.people; S.areas = d.areas; S.cats = d.cats || S.cats; S.settings = d.settings || S.settings; S.pacts = d.pacts || {}; S.aliases = d.aliases || {}; S.version = d.version || 0;
         const { init, ...rest } = d;
         normalize(); Sync.cfg = STABLE(rest); Sync.cfgReady = true; flush();
       } else if (!snap.metadata.fromCache && !Sync.cfgReady) {
@@ -261,7 +268,12 @@ function paintSync() {
 }
 
 const area = id => S.areas.find(a => a.id === id) || S.areas[S.areas.length - 1];
+const resolveCat = id => { let g = 0; while (S.aliases && S.aliases[id] && g++ < 10) id = S.aliases[id]; return id; };
+// Modo de tiempo de una categoría: 'timer' (botón ▶), 'auto' (cuenta lo planificado sin marcar) o 'none'.
+const catTime = c => c.time || (c.auto ? 'auto' : 'timer');
+const TIME_MODES = { timer: 'Medir con cronómetro ▶', auto: 'Contar solo, sin marcar (juntas, reuniones)', none: 'No medir tiempo' };
 const cat = id => {
+  id = resolveCat(id);
   const c = S.cats.find(x => x.id === id) || { id, name: 'Otro', emoji: '•', area: 'otros', points: 10 };
   return { ...c, color: area(c.area).color };
 };
@@ -306,7 +318,7 @@ function spentMin(it) {
   const pl = plannedMin(it.ev);
   if (!pl) return { min: 0, kind: '' };
   if (it.status === 'done') return { min: pl, kind: 'est' };
-  if (!it.status && it.date < todayISO() && cat(it.ev.cat).auto) return { min: pl, kind: 'est' };
+  if (!it.status && it.date < todayISO() && catTime(cat(it.ev.cat)) === 'auto') return { min: pl, kind: 'est' };
   return { min: 0, kind: '' };
 }
 function stopTimer(ev) {
@@ -444,7 +456,7 @@ function itemHTML(it, compact) {
   const { ev } = it, c = cat(ev.cat), st = it.status, late = !st && it.date < todayISO();
   const time = ev.start ? `<div class="time">${ev.start}<br>${ev.end || ''}</div>` : '';
   const tm = timerOf(ev), running = tm && tm.date === it.date, rec = recSec(it), pl = plannedMin(ev), cdef = cat(ev.cat);
-  const canTimer = !cdef.auto && (running || (it.date === todayISO() && (!st || st === 'done')));
+  const canTimer = catTime(cdef) === 'timer' && (running || (it.date === todayISO() && (!st || st === 'done')));
   const timerBtn = !canTimer ? '' : running
     ? `<button class="tbtn run" data-act="timer" aria-label="Detener cronómetro"><span class="tick" data-start="${tm.startedAt}" data-base="${rec}">${fmtDur(Math.round((Date.now() - tm.startedAt) / 1000) + rec)}</span> ■</button>`
     : `<button class="tbtn" data-act="timer" aria-label="Iniciar cronómetro">▶</button>`;
@@ -544,7 +556,7 @@ function renderTiempo() {
   if (!tot) return `<div class="card empty fade">Aún no hay tiempo registrado esta semana.<br><span class="hint">Toca ▶ en un evento de hoy para medirlo, o márcalo como hecho para que cuente lo planificado.</span></div>`;
   // plan vs real por categoría (solo sesiones medidas con duración planificada)
   const cmp = {};
-  wk.filter(x => x.sp.kind === 'real' && plannedMin(x.it.ev) > 0).forEach(x => { const c = cmp[x.it.ev.cat] = cmp[x.it.ev.cat] || { plan: 0, real: 0, n: 0 }; c.plan += plannedMin(x.it.ev); c.real += x.sp.min; c.n++; });
+  wk.filter(x => x.sp.kind === 'real' && plannedMin(x.it.ev) > 0).forEach(x => { const rk = resolveCat(x.it.ev.cat), c = cmp[rk] = cmp[rk] || { plan: 0, real: 0, n: 0 }; c.plan += plannedMin(x.it.ev); c.real += x.sp.min; c.n++; });
   const cmpRows = Object.entries(cmp).sort((a, b) => b[1].real - a[1].real).map(([id, c]) => {
     const k = cat(id), r = c.real / c.plan, d = c.real - c.plan;
     const badge = r >= 1.15 ? `<span class="up">▲ +${fmtMin(d)} más</span>` : r >= .9 ? '<span class="up">✓ Cumplido</span>' : r >= .6 ? `<span class="warn-t">↓ −${fmtMin(-d)}</span>` : `<span class="neg">↓ −${fmtMin(-d)}</span>`;
@@ -555,9 +567,9 @@ function renderTiempo() {
   // evolución del promedio por sesión en 4 semanas
   const weeks = [3, 2, 1, 0].map(i => { const a = addDays(ws, -7 * i); return [a, addDays(a, 6)]; });
   const sess = weeks.map(([f, t]) => itemsBetweenLayer(f, t).filter(it => recSec(it) > 0));
-  const ids = [...new Set(sess.flat().map(it => it.ev.cat))];
+  const ids = [...new Set(sess.flat().map(it => resolveCat(it.ev.cat)))];
   const trendRows = ids.map(id => {
-    const avg = sess.map(w => { const l = w.filter(it => it.ev.cat === id); return l.length ? Math.round(sum(l, it => recSec(it)) / l.length / 60) : null; });
+    const avg = sess.map(w => { const l = w.filter(it => resolveCat(it.ev.cat) === id); return l.length ? Math.round(sum(l, it => recSec(it)) / l.length / 60) : null; });
     const vals = avg.filter(v => v !== null), k = cat(id);
     const dlt = vals.length > 1 ? vals[vals.length - 1] - vals[0] : 0;
     return `<div class="area-row"><div class="area-h"><span>${k.emoji}</span> <b>${esc(k.name)}</b><span class="grow"></span>${vals.length > 1 ? (dlt > 0 ? `<span class="up">▲ +${dlt} min</span>` : dlt < 0 ? `<span class="neg">▼ ${dlt} min</span>` : '<span>＝</span>') : ''}</div>
@@ -590,7 +602,7 @@ function getPact(m) {
 }
 function ensurePact(m) { if (!S.pacts[m] || S.pacts[m].virtual) { const p = getPact(m); delete p.virtual; S.pacts[m] = p; } return S.pacts[m]; }
 
-const commMatch = (c, it) => (c.cat ? it.ev.cat === c.cat : cat(it.ev.cat).area === c.area);
+const commMatch = (c, it) => (c.cat ? resolveCat(it.ev.cat) === resolveCat(c.cat) : cat(it.ev.cat).area === c.area);
 const commLabel = c => (c.cat ? `${cat(c.cat).emoji} ${cat(c.cat).name}` : `${area(c.area).emoji} ${area(c.area).name}`);
 const commUnit = c => (c.kind === 'minutes' ? 'min' : c.target === 1 ? 'vez' : 'veces');
 
@@ -761,7 +773,7 @@ function renderAjustes() {
   <div class="card fade"><h2>Categorías</h2><div class="actions" style="margin:-2px 0 10px"><button class="btn ghost" data-act="addcat">+ Nueva categoría</button></div><p class="hint" style="margin:-4px 0 10px">Los <b>puntos</b> son lo que suma una tarea de esa categoría al hacerla, y lo que resta si no se hace. No limitan cuántas veces la usas: eso lo decides al agregar cada cosa.</p><div id="cats">${S.cats.map(c => `
     <div class="catbox" data-cat="${c.id}"><div class="catrow"><input class="inp" data-f="emoji" value="${esc(c.emoji)}" style="width:52px;text-align:center"><input class="inp" data-f="name" value="${esc(c.name)}" style="flex:1;min-width:0"><button class="icon-btn" data-act="delcat" aria-label="Eliminar">×</button></div>
     <div class="catrow"><label class="hint" style="flex:none">Puntos</label><input class="inp" data-f="points" type="number" min="0" value="${c.points}" style="width:70px"><select class="inp" data-f="area" style="flex:1;min-width:0">${S.areas.map(a => `<option value="${a.id}" ${a.id === c.area ? 'selected' : ''}>${esc(a.emoji + ' ' + a.name)}</option>`).join('')}</select></div>
-    <label class="chk"><input type="checkbox" data-f="auto" ${c.auto ? 'checked' : ''}> Contar el tiempo sin marcar</label><label class="chk"><input type="checkbox" data-f="noload" ${c.noload ? 'checked' : ''}> No cuenta como carga del día</label></div>`).join('')}</div>
+    <div class="catrow"><label class="hint" style="flex:none">Tiempo</label><select class="inp" data-f="time" style="flex:1;min-width:0">${Object.entries(TIME_MODES).map(([k, n]) => `<option value="${k}" ${catTime(c) === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div><label class="chk"><input type="checkbox" data-f="noload" ${c.noload ? 'checked' : ''}> No cuenta como carga del día</label></div>`).join('')}</div>
     <div class="actions"><button class="btn ghost" data-act="addcat">+ Nueva categoría</button></div></div>
   <div class="card fade"><h2>Planificación</h2>
     <div class="field"><label>Límite de carga diaria: <span id="dlv">${S.settings.dayLimit}</span> h</label><input type="range" min="2" max="12" step="1" value="${S.settings.dayLimit}" id="dayLimit" style="width:100%"></div>
@@ -805,20 +817,42 @@ function render() {
 
 /* ───────── hoja de edición ───────── */
 const root = $('#sheetRoot');
-function closeSheet() { root.innerHTML = ''; }
+function closeSheet() { root.innerHTML = ''; document.body.classList.remove('sheet-open'); }
 function openSheet(html, mount) {
-  root.innerHTML = `<div class="scrim" data-act="closeSheet"></div><div class="sheet" role="dialog"><div class="grab"></div>${html}</div>`;
-  mount && mount($('.sheet', root));
+  const prev = $('.sheet', root), st = prev ? prev.scrollTop : 0, still = prev ? ' still' : '';
+  root.innerHTML = `<div class="scrim${still}" data-act="closeSheet"></div><div class="sheet${still}" role="dialog"><div class="grab"></div>${html}</div>`;
+  document.body.classList.add('sheet-open');
+  const sh = $('.sheet', root); if (prev) sh.scrollTop = st;
+  mount && mount(sh);
+}
+
+function mergeCat(from, to) {
+  S.aliases[from] = to;
+  Object.keys(S.aliases).forEach(k => { if (S.aliases[k] === from) S.aliases[k] = to; });
+  S.events.forEach(e => { if (resolveCat(e.cat) === to && e.cat !== to) e.cat = to; });
+  Object.values(S.pacts).forEach(p => [...p.a, ...p.b, ...p.joint].forEach(c => { if (c.cat === from) c.cat = to; }));
+  S.cats = S.cats.filter(c => c.id !== from);
+}
+function deleteCatSheet(id) {
+  const c = S.cats.find(x => x.id === id), others = S.cats.filter(x => x.id !== id);
+  if (!c || !others.length) return toast('Debe quedar al menos una categoría');
+  const n = S.events.filter(e => resolveCat(e.cat) === id).length;
+  openSheet(`<h3>Fusionar o eliminar «${esc(c.name)}»</h3>
+    <p class="hint" style="margin:-8px 0 14px">${n ? `Tiene ${n} evento${n > 1 ? 's' : ''}. Pasan a la categoría que elijas y no se pierde nada.` : 'No tiene eventos.'}</p>
+    <div class="field"><label for="mv-to">Mover todo a</label><select class="inp" id="mv-to">${others.map(o => `<option value="${o.id}">${esc(o.emoji + ' ' + o.name)}</option>`).join('')}</select></div>
+    <div class="actions"><button class="btn ghost" data-act="closeSheet">Cancelar</button><button class="btn danger2" data-ok>Fusionar y eliminar</button></div>`, sh => {
+    $('[data-ok]', sh).onclick = () => { const to = $('#mv-to', sh).value; mergeCat(id, to); save(); closeSheet(); render(); toast(`Fusionada con ${cat(to).name} ✓`); };
+  });
 }
 
 function categorySheet(done, cancel) {
-  const c = { name: '', emoji: '✨', area: S.areas[0].id, points: 10, auto: false, noload: false };
+  const c = { name: '', emoji: '✨', area: S.areas[0].id, points: 10, noload: false };
   openSheet(`<h3>Nueva categoría</h3>
     <div class="field"><label for="nc-name">Nombre</label><input class="inp" id="nc-name" placeholder="Ej. Freelance"></div>
     <div class="row"><div class="field" style="flex:none;width:90px"><label for="nc-emoji">Emoji</label><input class="inp" id="nc-emoji" value="✨" style="text-align:center"></div>
       <div class="field" style="flex:1"><label for="nc-area">Área</label><select class="inp" id="nc-area">${S.areas.map(a => `<option value="${a.id}">${esc(a.emoji + ' ' + a.name)}</option>`).join('')}</select></div></div>
     <div class="field"><label for="nc-pts">Puntos por tarea</label><input class="inp" id="nc-pts" type="number" min="0" value="10"></div>
-    <label class="chk"><input type="checkbox" id="nc-auto"> Contar el tiempo sin marcar (juntas, reuniones)</label>
+    <div class="field"><label for="nc-time">Tiempo</label><select class="inp" id="nc-time">${Object.entries(TIME_MODES).map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')}</select></div>
     <label class="chk"><input type="checkbox" id="nc-noload"> No cuenta como carga del día (ej. horario de trabajo)</label>
     <div class="actions"><button class="btn ghost" data-cancel>Cancelar</button><button class="btn" data-ok>Crear</button></div>`, sh => {
     setTimeout(() => $('#nc-name', sh).focus(), 300);
@@ -827,7 +861,7 @@ function categorySheet(done, cancel) {
       if ('cancel' in b.dataset) { cancel ? cancel() : closeSheet(); }
       else if ('ok' in b.dataset) {
         const name = $('#nc-name', sh).value.trim(); if (!name) return toast('Escribe un nombre');
-        const nc = { id: 'c' + uid(), name, emoji: $('#nc-emoji', sh).value.trim() || '✨', area: $('#nc-area', sh).value, points: Math.max(0, +$('#nc-pts', sh).value || 0), auto: $('#nc-auto', sh).checked, noload: $('#nc-noload', sh).checked };
+        const nc = { id: 'c' + uid(), name, emoji: $('#nc-emoji', sh).value.trim() || '✨', area: $('#nc-area', sh).value, points: Math.max(0, +$('#nc-pts', sh).value || 0), time: $('#nc-time', sh).value, noload: $('#nc-noload', sh).checked };
         S.cats.push(nc); save(); toast('Categoría creada ✓'); done(nc.id);
       }
     };
@@ -837,13 +871,14 @@ function categorySheet(done, cancel) {
 function eventSheet(ev, date) {
   const isNew = !ev;
   const dr = ev ? JSON.parse(JSON.stringify(ev)) : { id: uid(), title: '', owner: S.ui.me || 'both', cat: S.cats[0].id, date, start: '', end: '', repeat: 'none', days: [], res: {} };
+  dr.cat = resolveCat(dr.cat);
   let timed = !!dr.start;
   const draw = () => {
     const c = cat(dr.cat);
     const html = `<h3>${isNew ? 'Nuevo' : 'Editar'}</h3>
     <div class="field"><label>Título</label><input class="inp" id="f-title" placeholder="${esc(c.name)}" value="${esc(dr.title)}"></div>
     <div class="field"><label>Para</label><div class="row">${['a', 'b', 'both'].map(k => `<button class="opt ${dr.owner === k ? 'on' : ''}" style="--c:${ownerColor(k)}" data-o="${k}">${esc(who(k).name)}</button>`).join('')}</div></div>
-    <div class="field"><label>Categoría</label>${S.areas.filter(a => S.cats.some(x => x.area === a.id)).map(a => `<div class="hint" style="margin:6px 0 4px">${a.emoji} ${esc(a.name)}</div><div class="row">${S.cats.filter(x => x.area === a.id).map(x => `<button class="opt ${dr.cat === x.id ? 'on' : ''}" style="--c:${a.color}" data-c="${x.id}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>`).join('')}<div class="row" style="margin-top:8px"><button class="opt" data-newcat="1">+ Nueva categoría</button></div></div>
+    <div class="field"><label>Categoría</label>${S.areas.filter(a => S.cats.some(x => x.area === a.id)).map(a => `<div class="hint" style="margin:6px 0 4px">${a.emoji} ${esc(a.name)}</div><div class="row">${S.cats.filter(x => x.area === a.id).map(x => `<button class="opt ${dr.cat === x.id ? 'on' : ''}" style="--c:${a.color}" data-c="${x.id}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>`).join('')}<div class="row" style="margin-top:8px"><button class="opt" data-newcat="1">+ Nueva categoría</button><button class="opt" data-editcats="1">Editar categorías</button></div><div class="hint" style="margin-top:8px">⏱ ${esc(TIME_MODES[catTime(c)])}</div></div>
     <div class="field"><label>Fecha</label><input class="inp" type="date" id="f-date" value="${dr.date}"></div>
     <div class="field"><label>Horario</label><div class="row"><button class="opt ${!timed ? 'on' : ''}" data-t="0">Sin hora</button><button class="opt ${timed ? 'on' : ''}" data-t="1">Con hora</button></div>
       ${timed ? `<div class="row" style="margin-top:8px"><input class="inp" type="time" id="f-start" value="${dr.start || '09:00'}"><input class="inp" type="time" id="f-end" value="${dr.end || '10:00'}"></div>` : ''}</div>
@@ -862,7 +897,8 @@ function eventSheet(ev, date) {
       $('#f-pts', sh).oninput = e => dr.points = e.target.value === '' ? undefined : Math.max(0, +e.target.value);
       sh.onclick = e => {
         const b = e.target.closest('button'); if (!b) return;
-        if (b.dataset.newcat) { categorySheet(id => { dr.cat = id; draw(); }, draw); }
+        if (b.dataset.editcats) { closeSheet(); S.ui.tab = 'ajustes'; save(); render(); window.scrollTo(0, 0); }
+        else if (b.dataset.newcat) { categorySheet(id => { dr.cat = id; draw(); }, draw); }
         else if (b.dataset.o) { dr.owner = b.dataset.o; draw(); }
         else if (b.dataset.c) { dr.cat = b.dataset.c; draw(); }
         else if (b.dataset.t) { timed = b.dataset.t === '1'; if (!timed) { dr.start = ''; dr.end = ''; } else { dr.start = dr.start || '09:00'; dr.end = dr.end || '10:00'; } draw(); }
@@ -978,7 +1014,7 @@ const actions = {
   acolor: el => { const a = area(el.closest('[data-area]').dataset.area), i = PALETTE.indexOf(a.color); a.color = PALETTE[(i + 1) % PALETTE.length]; save(); render(); },
   addarea: () => { S.areas.splice(S.areas.length - 1, 0, { id: 'a' + uid(), name: 'Nueva área', emoji: '⭐', color: PALETTE[S.areas.length % PALETTE.length] }); save(); render(); },
   delarea: el => { const id = el.closest('[data-area]').dataset.area; if (id === 'otros') return toast('El área Otros no se puede eliminar'); if (S.cats.some(c => c.area === id)) return toast('Mueve sus categorías a otra área primero'); S.areas = S.areas.filter(a => a.id !== id); save(); render(); },
-  delcat: el => { const id = el.closest('[data-cat]').dataset.cat; if (S.cats.length <= 1) return toast('Debe quedar al menos una categoría'); const rm = () => { S.cats = S.cats.filter(c => c.id !== id); save(); render(); }; S.events.some(e => e.cat === id) ? confirmSheet('Hay eventos con esta categoría. Se mostrarán como "Otro".', 'Eliminar', rm) : rm(); },
+  delcat: el => { deleteCatSheet(el.closest('[data-cat]').dataset.cat); },
   addcat: () => categorySheet(() => { closeSheet(); render(); }),
   timer: el => {
     const it = el.closest('.item'), ev = S.events.find(e => e.id === it.dataset.id), date = it.dataset.date; if (!ev) return;

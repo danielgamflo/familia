@@ -226,3 +226,8 @@ h4{margin:14px 0 4px;font-size:14px}
 .padd{background:var(--soft);border-radius:14px;padding:10px;margin-top:8px}
 .okrow{display:flex;gap:14px;align-items:center;margin-bottom:6px;font-size:14px;color:var(--muted);font-weight:600}.okrow .yes{color:var(--both)}.okrow b{margin-left:auto;color:var(--ink)}
 .grid2{margin-bottom:12px}
+
+/* hojas: scroll propio, sin arrastrar la página de atrás */
+body.sheet-open{overflow:hidden}
+.sheet{max-height:92vh;max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+.sheet.still,.scrim.still{animation:none}
