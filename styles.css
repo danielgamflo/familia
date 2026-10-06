@@ -196,3 +196,17 @@ select.inp{appearance:auto}
 html{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%}
 .inp,input,select,textarea{font-size:16px}
 button{touch-action:manipulation}
+
+/* tiempo */
+.tbtn{height:26px;min-width:26px;border-radius:13px;border:1.5px solid var(--line);font-size:11px;padding:0 8px;color:var(--muted);flex:none;background:var(--card)}
+.tbtn.run{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:700;font-variant-numeric:tabular-nums}
+.spent{color:var(--ink);font-weight:600}
+.big-time{font-size:36px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-bottom:2px}
+.stack{display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--soft);margin-bottom:10px;gap:2px}
+.stack i{display:block;min-width:4px}
+.leg{display:flex;gap:8px;align-items:center;padding:5px 0;font-size:14px}.leg small{color:var(--muted);width:34px;text-align:right}
+.warn-t{color:#B07D1F;font-weight:700}
+.trend{display:flex;align-items:baseline;gap:6px;margin-top:4px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.trend span{font-size:17px;font-weight:600;color:var(--muted)}.trend span.now{color:var(--ink);font-size:20px;font-weight:800}.trend small{font-size:10px;font-weight:500;margin-left:2px}.trend i{color:var(--line);font-style:normal}
+.chk{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin:4px 0}.chk input{width:18px;height:18px;accent-color:var(--both)}
+.tabbar button{max-width:110px}

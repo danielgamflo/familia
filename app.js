@@ -33,7 +33,8 @@ const defaultAreas = () => [
   { id: 'relaciones', name: 'Relaciones', emoji: '🤝', color: '#C47F7A' },
   { id: 'salud', name: 'Salud', emoji: '💪', color: '#8AA07C' },
   { id: 'hogar', name: 'Hogar', emoji: '🏠', color: '#D9A441' },
-  { id: 'trabajo', name: 'Trabajo y proyectos', emoji: '🌱', color: '#6E8CA8' },
+  { id: 'trabajo', name: 'Trabajo', emoji: '💼', color: '#6E8CA8' },
+  { id: 'freelance', name: 'Freelance y proyectos', emoji: '🧑‍💻', color: '#6FA3A0' },
   { id: 'otros', name: 'Otros', emoji: '✨', color: '#B8A38A' }
 ];
 // Las áreas agrupan categorías y se usan para medir el crecimiento. El color del tema viene del área.
@@ -41,15 +42,18 @@ const defaultCats = () => [
   { id: 'oracion', name: 'Oración', emoji: '🙏', area: 'espiritual', points: 10 },
   { id: 'biblia', name: 'Lectura bíblica', emoji: '📖', area: 'espiritual', points: 10 },
   { id: 'ayuno', name: 'Ayuno', emoji: '🌾', area: 'espiritual', points: 15 },
-  { id: 'salida', name: 'Salida', emoji: '🥂', area: 'relaciones', points: 5 },
-  { id: 'juntas', name: 'Amigos y familia', emoji: '👥', area: 'relaciones', points: 10 },
+  { id: 'salida', name: 'Salida', emoji: '🥂', area: 'relaciones', points: 5, auto: true },
+  { id: 'juntas', name: 'Amigos y familia', emoji: '👥', area: 'relaciones', points: 10, auto: true },
   { id: 'ejercicio', name: 'Ejercicio', emoji: '💪', area: 'salud', points: 20 },
   { id: 'comida', name: 'Comida', emoji: '🍽️', area: 'salud', points: 10 },
   { id: 'orden', name: 'Orden depto', emoji: '🧹', area: 'hogar', points: 10 },
   { id: 'compras', name: 'Compras', emoji: '🛒', area: 'hogar', points: 5 },
-  { id: 'reunion', name: 'Reunión', emoji: '💼', area: 'trabajo', points: 10 },
-  { id: 'grabacion', name: 'Grabación Ahava', emoji: '🎬', area: 'trabajo', points: 20 },
-  { id: 'proyecto', name: 'Proyecto personal', emoji: '🌱', area: 'trabajo', points: 15 }
+  { id: 'trabajo', name: 'Trabajo', emoji: '💻', area: 'trabajo', points: 10, noload: true },
+  { id: 'reunion', name: 'Reunión de trabajo', emoji: '💼', area: 'trabajo', points: 10, auto: true },
+  { id: 'freelance', name: 'Freelance', emoji: '🧑‍💻', area: 'freelance', points: 15 },
+  { id: 'reunionf', name: 'Reunión freelance', emoji: '📞', area: 'freelance', points: 10, auto: true },
+  { id: 'grabacion', name: 'Grabación Ahava', emoji: '🎬', area: 'freelance', points: 20 },
+  { id: 'proyecto', name: 'Proyecto personal', emoji: '🌱', area: 'freelance', points: 15 }
 ];
 
 function seedEvents() {
@@ -72,7 +76,7 @@ function seedEvents() {
 }
 
 const defaultState = () => ({
-  version: 2,
+  version: 3,
   people: { a: { name: 'Daniel', color: '#6E8CA8' }, b: { name: 'Cami', color: '#C47F7A' }, both: { name: 'Juntos', color: '#8AA07C' } },
   areas: defaultAreas(),
   cats: defaultCats(),
@@ -108,6 +112,20 @@ function normalize() {
   }
   S.cats.forEach(c => { if (!S.areas.some(a => a.id === c.area)) c.area = 'otros'; });
   if (!S.areas.some(a => a.id === 'otros')) S.areas.push(defaultAreas().pop());
+  if ((S.version || 0) < 3) {
+    const tr = S.areas.find(a => a.id === 'trabajo');
+    if (tr && tr.name === 'Trabajo y proyectos') tr.name = 'Trabajo';
+    if (!S.areas.some(a => a.id === 'freelance')) S.areas.splice(Math.max(0, S.areas.findIndex(a => a.id === 'otros')), 0, { id: 'freelance', name: 'Freelance y proyectos', emoji: '🧑‍💻', color: '#6FA3A0' });
+    const add = (id, name, emoji, area, points, extra) => { if (!S.cats.some(c => c.id === id)) S.cats.push({ id, name, emoji, area, points, ...extra }); };
+    add('trabajo', 'Trabajo', '💻', 'trabajo', 10, { noload: true });
+    add('freelance', 'Freelance', '🧑‍💻', 'freelance', 15);
+    add('reunionf', 'Reunión freelance', '📞', 'freelance', 10, { auto: true });
+    S.cats.forEach(c => {
+      if ((c.id === 'proyecto' || c.id === 'grabacion') && c.area === 'trabajo') c.area = 'freelance';
+      if (['juntas', 'salida', 'reunion'].includes(c.id) && c.auto === undefined) c.auto = true;
+    });
+    S.version = 3;
+  }
   // estado de cada ocurrencia: ev.res[fecha] = done | missed | cancelled | moved
   S.events.forEach(e => {
     e.res = e.res || {};
@@ -121,7 +139,7 @@ let cursor = todayISO();
 
 /* ───────── sincronización (Daniel y Cami) ───────── */
 const Sync = { status: REMOTE ? 'connecting' : 'local', kind: SB ? 'supabase' : 'artifact', live: false, db: null, uid: null, canWrite: null, last: new Map(), cfg: '', cfgReady: false, q: Promise.resolve() };
-const cfgOf = () => ({ version: 2, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings });
+const cfgOf = () => ({ version: S.version || 3, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings });
 const ME_PATH = () => 'data/users/' + Sync.uid + '/profile';
 
 function onSyncError(e) {
@@ -176,7 +194,8 @@ async function initSync() {
       if (snap.exists) {
         const d = clone(snap.data());
         S.people = d.people || S.people; S.areas = d.areas; S.cats = d.cats || S.cats; S.settings = d.settings || S.settings;
-        normalize(); Sync.cfg = STABLE(cfgOf()); Sync.cfgReady = true;
+        const { init, ...rest } = d;
+        normalize(); Sync.cfg = STABLE(rest); Sync.cfgReady = true; flush();
       } else if (!snap.metadata.fromCache && !Sync.cfgReady) {
         // Primer uso: se crea la configuración y se suben los eventos propios (no los de ejemplo).
         Sync.cfgReady = true; Sync.cfg = STABLE(cfgOf());
@@ -188,7 +207,7 @@ async function initSync() {
     db.collection('events').onSnapshot(snap => {
       S.events = snap.docs.map(d => clone(d.data())); normalize();
       Sync.last = new Map(S.events.map(e => [e.id, STABLE(e)]));
-      if (!snap.metadata.fromCache || snap.size) { clearTimeout(timer); Sync.live = true; Sync.status = 'live'; }
+      if (!snap.metadata.fromCache || snap.size) { clearTimeout(timer); Sync.live = true; Sync.status = 'live'; flush(); }
       paintSync(); Store.save(S); refresh();
     }, onSyncError);
     if (SB) { /* la identidad viene de la tabla members */ }
@@ -271,7 +290,43 @@ function itemsOn(d, all = false) {
   return out.sort((x, y) => (x.ev.start || '99').localeCompare(y.ev.start || '99'));
 }
 
-const dayLoad = d => itemsOn(d, true).reduce((m, it) => m + (it.ev.start && it.ev.end ? Math.max(0, toMin(it.ev.end) - toMin(it.ev.start)) : 20), 0);
+const dayLoad = d => itemsOn(d, true).filter(it => isActive(it) && !cat(it.ev.cat).noload).reduce((m, it) => m + (it.ev.start && it.ev.end ? Math.max(0, toMin(it.ev.end) - toMin(it.ev.start)) : 20), 0);
+/* ───────── tiempo ───────── */
+const plannedMin = ev => (ev.start && ev.end ? Math.max(0, toMin(ev.end) - toMin(ev.start)) : (ev.est || 0));
+const timerOf = ev => (ev.timer && ev.timer.startedAt ? ev.timer : null);
+const fmtMin = m => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h} h ${r} min` : `${h} h`) : `${r} min`; };
+const fmtDur = sec => { const m = Math.floor(sec / 60), h = Math.floor(m / 60); return h ? `${h}:${pad(m % 60)}:${pad(sec % 60)}` : `${m}:${pad(sec % 60)}`; };
+const recSec = it => (it.ev.time && it.ev.time[it.date]) || 0;
+// Minutos que cuentan para el tracker: lo medido con cronómetro o anotado; si no, lo planificado cuando se marcó hecho
+// (o pasó el día en categorías que cuentan solas, como juntas o reuniones).
+function spentMin(it) {
+  const rec = recSec(it);
+  if (rec) return { min: Math.round(rec / 60), kind: 'real' };
+  const pl = plannedMin(it.ev);
+  if (!pl) return { min: 0, kind: '' };
+  if (it.status === 'done') return { min: pl, kind: 'est' };
+  if (!it.status && it.date < todayISO() && cat(it.ev.cat).auto) return { min: pl, kind: 'est' };
+  return { min: 0, kind: '' };
+}
+function stopTimer(ev) {
+  const t = timerOf(ev); if (!t) return null;
+  const el = Math.max(0, Math.round((Date.now() - t.startedAt) / 1000));
+  delete ev.timer;
+  if (el >= 60) { ev.time = ev.time || {}; ev.time[t.date] = (ev.time[t.date] || 0) + el; }  // menos de 1 min se descarta (toque accidental)
+  return { date: t.date, el };
+}
+function startTimer(ev, date) {
+  const me = S.ui.me || 'a';
+  S.events.forEach(e => { if (e.id !== ev.id && e.timer && e.timer.by === me) stopTimer(e); });
+  ev.timer = { date, startedAt: Date.now(), by: me };
+}
+function compareText(ev, date) {
+  const real = Math.round(((ev.time && ev.time[date]) || 0) / 60), pl = plannedMin(ev);
+  if (!pl) return `Registrado: ${fmtMin(real)}`;
+  const d = real - pl;
+  return `${fmtMin(real)} de ${fmtMin(pl)} planificados${d > 0 ? ` (+${fmtMin(d)})` : d < 0 ? ` (−${fmtMin(-d)})` : ' · justo lo planeado'}`;
+}
+
 const loadRatio = d => dayLoad(d) / (S.settings.dayLimit * 60);
 
 function freeSlots(d) {
@@ -387,12 +442,19 @@ const STATUS = {
 function itemHTML(it, compact) {
   const { ev } = it, c = cat(ev.cat), st = it.status, late = !st && it.date < todayISO();
   const time = ev.start ? `<div class="time">${ev.start}<br>${ev.end || ''}</div>` : '';
+  const tm = timerOf(ev), running = tm && tm.date === it.date, rec = recSec(it), pl = plannedMin(ev), cdef = cat(ev.cat);
+  const canTimer = !cdef.auto && (running || (it.date === todayISO() && (!st || st === 'done')));
+  const timerBtn = !canTimer ? '' : running
+    ? `<button class="tbtn run" data-act="timer" aria-label="Detener cronómetro"><span class="tick" data-start="${tm.startedAt}" data-base="${rec}">${fmtDur(Math.round((Date.now() - tm.startedAt) / 1000) + rec)}</span> ■</button>`
+    : `<button class="tbtn" data-act="timer" aria-label="Iniciar cronómetro">▶</button>`;
+  const spent = !running && rec ? `<span class="spent">⏱ ${fmtMin(rec / 60)}${pl ? ' / ' + fmtMin(pl) : ''}</span>` : '';
+  const who2 = running && tm.by !== (S.ui.me || tm.by) ? `<span class="tag" style="--c:${ownerColor(tm.by)}">⏱ ${esc(who(tm.by).name)}</span>` : '';
   const pts = st === 'missed' ? `<span class="neg">−${it.pts}</span>` : st === 'cancelled' || st === 'moved' ? `<span>${STATUS[st].label}</span>` : `<span class="pts">+${it.pts}</span>`;
   return `<div class="item ${st || ''} ${late ? 'late' : ''}" data-id="${ev.id}" data-date="${it.date}">
     <i class="bar-o" style="background:${ownerColor(ev.owner)}"></i>${compact ? '' : time}
     <div class="body" data-act="edit"><div class="t">${c.emoji} ${esc(ev.title)}</div>
-      <div class="m">${compact && ev.start ? `<span>${ev.start}</span>` : ''}<span class="tag" style="--c:${c.color}">${esc(c.name)}</span><span>${esc(who(ev.owner).name)}</span>${pts}</div></div>
-    <button class="check" data-act="outcome" aria-label="Marcar resultado">${st ? STATUS[st].icon : late ? '?' : '✓'}</button></div>`;
+      <div class="m">${compact && ev.start ? `<span>${ev.start}</span>` : ''}<span class="tag" style="--c:${c.color}">${esc(c.name)}</span><span>${esc(who(ev.owner).name)}</span>${pts}${spent}${who2}</div></div>
+    ${timerBtn}<button class="check" data-act="outcome" aria-label="Marcar resultado">${st ? STATUS[st].icon : late ? '?' : '✓'}</button></div>`;
 }
 
 const alertHTML = () => {
@@ -468,6 +530,49 @@ function growthHTML(ws) {
     <div class="hint" style="margin-top:8px">Barras: puntos netos de las últimas 4 semanas (la última es la actual).${neglected.length ? ` Sin actividad: ${esc(neglected.join(', '))}.` : ''}</div></div>`;
 }
 
+const itemsBetweenLayer = (from, to) => { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(...itemsOn(d, false)); return out; };
+
+function renderTiempo() {
+  const ws = startOfWeek(cursor), we = addDays(ws, 6);
+  const wk = itemsBetweenLayer(ws, we).map(it => ({ it, sp: spentMin(it) }));
+  const tot = wk.reduce((n, x) => n + x.sp.min, 0), real = wk.filter(x => x.sp.kind === 'real').reduce((n, x) => n + x.sp.min, 0);
+  const sum = (arr, f) => arr.reduce((n, x) => n + f(x), 0);
+  const byArea = S.areas.map(a => ({ a, min: sum(wk.filter(x => cat(x.it.ev.cat).area === a.id), x => x.sp.min) })).filter(r => r.min > 0).sort((x, y) => y.min - x.min);
+  const days = [...Array(7)].map((_, i) => { const d = addDays(ws, i); return { d, min: sum(wk.filter(x => x.it.date === d), x => x.sp.min) }; });
+  const mxD = Math.max(60, ...days.map(x => x.min)), today = todayISO();
+  if (!tot) return `<div class="card empty fade">Aún no hay tiempo registrado esta semana.<br><span class="hint">Toca ▶ en un evento de hoy para medirlo, o márcalo como hecho para que cuente lo planificado.</span></div>`;
+  // plan vs real por categoría (solo sesiones medidas con duración planificada)
+  const cmp = {};
+  wk.filter(x => x.sp.kind === 'real' && plannedMin(x.it.ev) > 0).forEach(x => { const c = cmp[x.it.ev.cat] = cmp[x.it.ev.cat] || { plan: 0, real: 0, n: 0 }; c.plan += plannedMin(x.it.ev); c.real += x.sp.min; c.n++; });
+  const cmpRows = Object.entries(cmp).sort((a, b) => b[1].real - a[1].real).map(([id, c]) => {
+    const k = cat(id), r = c.real / c.plan, d = c.real - c.plan;
+    const badge = r >= 1.15 ? `<span class="up">▲ +${fmtMin(d)} más</span>` : r >= .9 ? '<span class="up">✓ Cumplido</span>' : r >= .6 ? `<span class="warn-t">↓ −${fmtMin(-d)}</span>` : `<span class="neg">↓ −${fmtMin(-d)}</span>`;
+    return `<div class="area-row"><div class="area-h"><span>${k.emoji}</span> <b>${esc(k.name)}</b><span class="grow"></span>${badge}</div>
+      <div class="bar" style="margin:6px 0 4px"><div style="width:${Math.min(100, r * 100)}%;background:${k.color}"></div></div>
+      <small class="hint">Planificado ${fmtMin(c.plan)} · real ${fmtMin(c.real)} (${Math.round(r * 100)}%) · ${c.n} sesión${c.n > 1 ? 'es' : ''}</small></div>`;
+  }).join('');
+  // evolución del promedio por sesión en 4 semanas
+  const weeks = [3, 2, 1, 0].map(i => { const a = addDays(ws, -7 * i); return [a, addDays(a, 6)]; });
+  const sess = weeks.map(([f, t]) => itemsBetweenLayer(f, t).filter(it => recSec(it) > 0));
+  const ids = [...new Set(sess.flat().map(it => it.ev.cat))];
+  const trendRows = ids.map(id => {
+    const avg = sess.map(w => { const l = w.filter(it => it.ev.cat === id); return l.length ? Math.round(sum(l, it => recSec(it)) / l.length / 60) : null; });
+    const vals = avg.filter(v => v !== null), k = cat(id);
+    const dlt = vals.length > 1 ? vals[vals.length - 1] - vals[0] : 0;
+    return `<div class="area-row"><div class="area-h"><span>${k.emoji}</span> <b>${esc(k.name)}</b><span class="grow"></span>${vals.length > 1 ? (dlt > 0 ? `<span class="up">▲ +${dlt} min</span>` : dlt < 0 ? `<span class="neg">▼ ${dlt} min</span>` : '<span>＝</span>') : ''}</div>
+      <div class="trend">${avg.map((v, i) => `<span class="${i === 3 ? 'now' : ''}">${v === null ? '—' : v + '<small>min</small>'}</span>`).join('<i>→</i>')}</div></div>`;
+  }).join('');
+  return `<div class="card fade"><h2>Esta semana</h2>
+    <div class="big-time">${fmtMin(tot)}</div>
+    <div class="hint" style="margin-bottom:12px">${fmtMin(real)} medidas o anotadas${tot - real > 0 ? ` · ${fmtMin(tot - real)} estimadas (marcadas como hechas o automáticas)` : ''}</div>
+    <div class="stack">${byArea.map(r => `<i style="width:${r.min / tot * 100}%;background:${r.a.color}"></i>`).join('')}</div>
+    ${byArea.map(r => `<div class="leg"><span style="color:${r.a.color}">${r.a.emoji}</span><b>${esc(r.a.name)}</b><span class="grow"></span><span>${fmtMin(r.min)}</span><small>${Math.round(r.min / tot * 100)}%</small></div>`).join('')}</div>
+  <div class="card fade"><h2>Por día</h2><div class="history">${days.map(x => `<div class="${x.d === today ? 'today' : ''}"><span style="height:${x.min / mxD * 100}%"></span>${fmt(x.d, { weekday: 'narrow' }).toUpperCase()}</div>`).join('')}</div>
+    <div class="hint" style="margin-top:8px">${days.map(x => x.min ? fmtMin(x.min) : '—').join(' · ')}</div></div>
+  ${cmpRows ? `<div class="card fade"><h2>Plan contra real</h2>${cmpRows}</div>` : ''}
+  ${trendRows ? `<div class="card fade"><h2>Evolución por sesión (promedio, 4 semanas)</h2>${trendRows}<div class="hint" style="margin-top:8px">Cuánto dura en promedio cada sesión, de la más antigua a la actual.</div></div>` : ''}`;
+}
+
 function renderLogros() {
   const t = todayISO(), ws = startOfWeek(t), we = addDays(ws, 6), all0 = earliest();
   const A = pointsFor('a', ws, we), B = pointsFor('b', ws, we), T = teamPoints(ws, we), plan = plannedPoints(ws, we);
@@ -505,9 +610,10 @@ function renderAjustes() {
   <div class="card fade"><h2>Áreas</h2><p class="hint" style="margin:-4px 0 10px">Una área agrupa categorías parecidas (por ejemplo Espiritual: oración, lectura bíblica, ayuno) y es lo que miden en Logros para ver dónde crecen. El color del área es el color de sus categorías.</p>
     ${S.areas.map(a => `<div class="catrow" data-area="${a.id}"><input class="inp" data-af="emoji" value="${esc(a.emoji)}" style="width:52px;text-align:center"><input class="inp" data-af="name" value="${esc(a.name)}" style="flex:1;min-width:0"><button class="swatch" data-act="acolor" style="background:${a.color}" title="Cambiar color"></button><button class="icon-btn" data-act="delarea" aria-label="Eliminar">×</button></div>`).join('')}
     <div class="actions"><button class="btn ghost" data-act="addarea">+ Nueva área</button></div></div>
-  <div class="card fade"><h2>Categorías</h2><p class="hint" style="margin:-4px 0 10px">Los <b>puntos</b> son lo que suma una tarea de esa categoría al hacerla, y lo que resta si no se hace. No limitan cuántas veces la usas: eso lo decides al agregar cada cosa.</p><div id="cats">${S.cats.map(c => `
+  <div class="card fade"><h2>Categorías</h2><div class="actions" style="margin:-2px 0 10px"><button class="btn ghost" data-act="addcat">+ Nueva categoría</button></div><p class="hint" style="margin:-4px 0 10px">Los <b>puntos</b> son lo que suma una tarea de esa categoría al hacerla, y lo que resta si no se hace. No limitan cuántas veces la usas: eso lo decides al agregar cada cosa.</p><div id="cats">${S.cats.map(c => `
     <div class="catbox" data-cat="${c.id}"><div class="catrow"><input class="inp" data-f="emoji" value="${esc(c.emoji)}" style="width:52px;text-align:center"><input class="inp" data-f="name" value="${esc(c.name)}" style="flex:1;min-width:0"><button class="icon-btn" data-act="delcat" aria-label="Eliminar">×</button></div>
-    <div class="catrow"><label class="hint" style="flex:none">Puntos</label><input class="inp" data-f="points" type="number" min="0" value="${c.points}" style="width:70px"><select class="inp" data-f="area" style="flex:1;min-width:0">${S.areas.map(a => `<option value="${a.id}" ${a.id === c.area ? 'selected' : ''}>${esc(a.emoji + ' ' + a.name)}</option>`).join('')}</select></div></div>`).join('')}</div>
+    <div class="catrow"><label class="hint" style="flex:none">Puntos</label><input class="inp" data-f="points" type="number" min="0" value="${c.points}" style="width:70px"><select class="inp" data-f="area" style="flex:1;min-width:0">${S.areas.map(a => `<option value="${a.id}" ${a.id === c.area ? 'selected' : ''}>${esc(a.emoji + ' ' + a.name)}</option>`).join('')}</select></div>
+    <label class="chk"><input type="checkbox" data-f="auto" ${c.auto ? 'checked' : ''}> Contar el tiempo sin marcar</label><label class="chk"><input type="checkbox" data-f="noload" ${c.noload ? 'checked' : ''}> No cuenta como carga del día</label></div>`).join('')}</div>
     <div class="actions"><button class="btn ghost" data-act="addcat">+ Nueva categoría</button></div></div>
   <div class="card fade"><h2>Planificación</h2>
     <div class="field"><label>Límite de carga diaria: <span id="dlv">${S.settings.dayLimit}</span> h</label><input type="range" min="2" max="12" step="1" value="${S.settings.dayLimit}" id="dayLimit" style="width:100%"></div>
@@ -521,6 +627,7 @@ function renderAjustes() {
 
 function periodTitle() {
   const v = S.ui.view;
+  if (S.ui.tab === 'tiempo') { const a = startOfWeek(cursor), b = addDays(a, 6); return [`${fmt(a, { day: 'numeric' })} – ${fmt(b, { day: 'numeric', month: 'short' })}`, 'Tiempo de la semana']; }
   if (S.ui.tab === 'logros') return ['Logros', 'Su avance juntos'];
   if (S.ui.tab === 'ajustes') return ['Ajustes', 'Personaliza el espacio'];
   if (v === 'day') return [fmt(cursor, { weekday: 'long', day: 'numeric' }), fmt(cursor, { month: 'long', year: 'numeric' })];
@@ -530,9 +637,10 @@ function periodTitle() {
 
 function render() {
   const tab = S.ui.tab;
-  $('#planTools').style.display = tab === 'plan' ? '' : 'none';
-  $('.nav').style.visibility = tab === 'plan' ? 'visible' : 'hidden';
-  $('#fab').style.display = tab === 'ajustes' ? 'none' : '';
+  $('#planTools').style.display = tab === 'plan' || tab === 'tiempo' ? '' : 'none';
+  $('#viewSeg').style.display = tab === 'plan' ? '' : 'none';
+  $('.nav').style.visibility = tab === 'plan' || tab === 'tiempo' ? 'visible' : 'hidden';
+  $('#fab').style.display = tab === 'ajustes' || tab === 'tiempo' ? 'none' : '';
   const [t, s] = periodTitle(); $('#periodTitle').textContent = t; $('#periodSub').textContent = s;
   $$('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.view === S.ui.view));
   $$('.tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -542,7 +650,7 @@ function render() {
   if (Sync.status === 'connecting') { main.innerHTML = '<div class="card empty fade">Conectando con la nube…</div>'; paintSync(); return; }
   if (Sync.status === 'login') { main.innerHTML = '<div class="card empty fade">Inicia sesión para ver el plan.</div>'; paintSync(); return; }
   if (Sync.status === 'denied') { main.innerHTML = `<div class="card fade"><h2>Correo no autorizado</h2><p style="margin:0 0 14px">${esc(Sync.email || '')} no está en la lista de Daniel y Cami. Entra con el correo que se registró en la configuración.</p><div class="actions"><button class="btn" data-act="signout">Cerrar sesión</button></div></div>`; paintSync(); return; }
-  main.innerHTML = ro + (tab === 'logros' ? renderLogros() : tab === 'ajustes' ? renderAjustes() : S.ui.view === 'day' ? renderDay() : S.ui.view === 'week' ? renderWeek() : renderMonth());
+  main.innerHTML = ro + (tab === 'tiempo' ? renderTiempo() : tab === 'logros' ? renderLogros() : tab === 'ajustes' ? renderAjustes() : S.ui.view === 'day' ? renderDay() : S.ui.view === 'week' ? renderWeek() : renderMonth());
   paintSync();
   window.scrollTo(0, y);
 }
@@ -555,6 +663,29 @@ function openSheet(html, mount) {
   mount && mount($('.sheet', root));
 }
 
+function categorySheet(done, cancel) {
+  const c = { name: '', emoji: '✨', area: S.areas[0].id, points: 10, auto: false, noload: false };
+  openSheet(`<h3>Nueva categoría</h3>
+    <div class="field"><label for="nc-name">Nombre</label><input class="inp" id="nc-name" placeholder="Ej. Freelance"></div>
+    <div class="row"><div class="field" style="flex:none;width:90px"><label for="nc-emoji">Emoji</label><input class="inp" id="nc-emoji" value="✨" style="text-align:center"></div>
+      <div class="field" style="flex:1"><label for="nc-area">Área</label><select class="inp" id="nc-area">${S.areas.map(a => `<option value="${a.id}">${esc(a.emoji + ' ' + a.name)}</option>`).join('')}</select></div></div>
+    <div class="field"><label for="nc-pts">Puntos por tarea</label><input class="inp" id="nc-pts" type="number" min="0" value="10"></div>
+    <label class="chk"><input type="checkbox" id="nc-auto"> Contar el tiempo sin marcar (juntas, reuniones)</label>
+    <label class="chk"><input type="checkbox" id="nc-noload"> No cuenta como carga del día (ej. horario de trabajo)</label>
+    <div class="actions"><button class="btn ghost" data-cancel>Cancelar</button><button class="btn" data-ok>Crear</button></div>`, sh => {
+    setTimeout(() => $('#nc-name', sh).focus(), 300);
+    sh.onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if ('cancel' in b.dataset) { cancel ? cancel() : closeSheet(); }
+      else if ('ok' in b.dataset) {
+        const name = $('#nc-name', sh).value.trim(); if (!name) return toast('Escribe un nombre');
+        const nc = { id: 'c' + uid(), name, emoji: $('#nc-emoji', sh).value.trim() || '✨', area: $('#nc-area', sh).value, points: Math.max(0, +$('#nc-pts', sh).value || 0), auto: $('#nc-auto', sh).checked, noload: $('#nc-noload', sh).checked };
+        S.cats.push(nc); save(); toast('Categoría creada ✓'); done(nc.id);
+      }
+    };
+  });
+}
+
 function eventSheet(ev, date) {
   const isNew = !ev;
   const dr = ev ? JSON.parse(JSON.stringify(ev)) : { id: uid(), title: '', owner: S.ui.me || 'both', cat: S.cats[0].id, date, start: '', end: '', repeat: 'none', days: [], res: {} };
@@ -564,10 +695,11 @@ function eventSheet(ev, date) {
     const html = `<h3>${isNew ? 'Nuevo' : 'Editar'}</h3>
     <div class="field"><label>Título</label><input class="inp" id="f-title" placeholder="${esc(c.name)}" value="${esc(dr.title)}"></div>
     <div class="field"><label>Para</label><div class="row">${['a', 'b', 'both'].map(k => `<button class="opt ${dr.owner === k ? 'on' : ''}" style="--c:${ownerColor(k)}" data-o="${k}">${esc(who(k).name)}</button>`).join('')}</div></div>
-    <div class="field"><label>Categoría</label>${S.areas.filter(a => S.cats.some(x => x.area === a.id)).map(a => `<div class="hint" style="margin:6px 0 4px">${a.emoji} ${esc(a.name)}</div><div class="row">${S.cats.filter(x => x.area === a.id).map(x => `<button class="opt ${dr.cat === x.id ? 'on' : ''}" style="--c:${a.color}" data-c="${x.id}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>`).join('')}</div>
+    <div class="field"><label>Categoría</label>${S.areas.filter(a => S.cats.some(x => x.area === a.id)).map(a => `<div class="hint" style="margin:6px 0 4px">${a.emoji} ${esc(a.name)}</div><div class="row">${S.cats.filter(x => x.area === a.id).map(x => `<button class="opt ${dr.cat === x.id ? 'on' : ''}" style="--c:${a.color}" data-c="${x.id}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>`).join('')}<div class="row" style="margin-top:8px"><button class="opt" data-newcat="1">+ Nueva categoría</button></div></div>
     <div class="field"><label>Fecha</label><input class="inp" type="date" id="f-date" value="${dr.date}"></div>
     <div class="field"><label>Horario</label><div class="row"><button class="opt ${!timed ? 'on' : ''}" data-t="0">Sin hora</button><button class="opt ${timed ? 'on' : ''}" data-t="1">Con hora</button></div>
       ${timed ? `<div class="row" style="margin-top:8px"><input class="inp" type="time" id="f-start" value="${dr.start || '09:00'}"><input class="inp" type="time" id="f-end" value="${dr.end || '10:00'}"></div>` : ''}</div>
+    ${timed ? '' : `<div class="field"><label>Duración estimada (minutos, opcional)</label><input class="inp" type="number" min="0" inputmode="numeric" id="f-est" value="${dr.est ?? ''}" placeholder="Ej. 60"></div>`}
     <div class="field"><label>Repetir</label><div class="row">${[['none', 'No'], ['daily', 'Cada día'], ['weekly', 'Semanal']].map(([k, n]) => `<button class="opt ${dr.repeat === k ? 'on' : ''}" data-r="${k}">${n}</button>`).join('')}</div>
       ${dr.repeat === 'weekly' ? `<div class="row" style="margin-top:8px">${[1, 2, 3, 4, 5, 6, 0].map(n => `<button class="opt ${(dr.days || []).includes(n) ? 'on' : ''}" data-d="${n}">${'DLMMJVS'[n]}</button>`).join('')}</div>` : ''}</div>
     <div class="field"><label>Puntos (vacío = ${c.points} de la categoría)</label><input class="inp" type="number" min="0" id="f-pts" value="${dr.points ?? ''}"></div>
@@ -578,10 +710,12 @@ function eventSheet(ev, date) {
       $('#f-date', sh).onchange = e => dr.date = e.target.value || dr.date;
       const st = $('#f-start', sh), en = $('#f-end', sh);
       if (st) { st.onchange = () => dr.start = st.value; en.onchange = () => dr.end = en.value; dr.start = st.value; dr.end = en.value; }
+      const fe = $('#f-est', sh); if (fe) fe.oninput = () => { dr.est = fe.value === '' ? undefined : Math.max(0, +fe.value); };
       $('#f-pts', sh).oninput = e => dr.points = e.target.value === '' ? undefined : Math.max(0, +e.target.value);
       sh.onclick = e => {
         const b = e.target.closest('button'); if (!b) return;
-        if (b.dataset.o) { dr.owner = b.dataset.o; draw(); }
+        if (b.dataset.newcat) { categorySheet(id => { dr.cat = id; draw(); }, draw); }
+        else if (b.dataset.o) { dr.owner = b.dataset.o; draw(); }
         else if (b.dataset.c) { dr.cat = b.dataset.c; draw(); }
         else if (b.dataset.t) { timed = b.dataset.t === '1'; if (!timed) { dr.start = ''; dr.end = ''; } else { dr.start = dr.start || '09:00'; dr.end = dr.end || '10:00'; } draw(); }
         else if (b.dataset.r) { dr.repeat = b.dataset.r; if (dr.repeat === 'weekly' && !(dr.days || []).length) dr.days = [parse(dr.date).getDay()]; draw(); }
@@ -652,6 +786,7 @@ function outcomeSheet(id, date, btn) {
       <button class="out zero ${cur === 'cancelled' ? 'on' : ''}" data-s="cancelled"><b>⊘ No se concretó</b><small>0 pts · no dependió de nosotros</small></button>
       <button class="out mv ${cur === 'moved' ? 'on' : ''}" data-s="moving"><b>↻ Reprogramar</b><small>0 pts · pasa a otro día</small></button>
     </div>
+    <div class="field" style="margin-top:14px"><label>Tiempo real (minutos)${plannedMin(ev) ? ` · planificado ${fmtMin(plannedMin(ev))}` : ''}</label><div class="row"><input class="inp" type="number" min="0" inputmode="numeric" id="f-tmin" value="${recSec({ ev, date }) ? Math.round(recSec({ ev, date }) / 60) : ''}" placeholder="Ej. 45"><button class="btn ghost" data-s="savetime" style="flex:none">Guardar tiempo</button></div></div>
     ${moving ? `<div class="field" style="margin-top:12px"><label>Nueva fecha</label><div class="row"><input class="inp" type="date" id="f-nd" value="${nd}"><button class="btn" data-s="moved" style="flex:none">Reprogramar</button></div></div>` : ''}
     <div class="actions" style="margin-top:14px">${cur ? '<button class="btn ghost" data-s="clear">Quitar marca</button>' : ''}<button class="btn ghost" data-act="closeSheet">Cerrar</button></div>`, sh => {
       const f = $('#f-nd', sh); if (f) f.onchange = () => { nd = f.value || nd; };
@@ -659,6 +794,12 @@ function outcomeSheet(id, date, btn) {
         const b = e.target.closest('[data-s]'); if (!b) return;
         const k = b.dataset.s;
         if (k === 'moving') { moving = true; draw(); }
+        else if (k === 'savetime') {
+          const v = Math.max(0, Math.round(+$('#f-tmin', sh).value || 0));
+          ev.time = ev.time || {}; if (v) ev.time[date] = v * 60; else delete ev.time[date];
+          if (v && !(ev.res && ev.res[date])) { ev.res = ev.res || {}; ev.res[date] = 'done'; }
+          save(); closeSheet(); render(); toast(v ? compareText(ev, date) : 'Tiempo quitado');
+        }
         else if (k === 'clear') setOutcome(ev, date, null);
         else if (k === 'moved') { if (!nd || nd === date) return toast('Elige otra fecha'); setOutcome(ev, date, 'moved', nd); }
         else setOutcome(ev, date, k, null, btn);
@@ -669,7 +810,7 @@ function outcomeSheet(id, date, btn) {
 }
 
 function move(dir) {
-  const v = S.ui.view;
+  const v = S.ui.tab === 'tiempo' ? 'week' : S.ui.view;
   if (v === 'day') cursor = addDays(cursor, dir);
   else if (v === 'week') cursor = addDays(cursor, 7 * dir);
   else { const d = parse(cursor); d.setDate(1); d.setMonth(d.getMonth() + dir); cursor = iso(d); }
@@ -690,7 +831,15 @@ const actions = {
   addarea: () => { S.areas.splice(S.areas.length - 1, 0, { id: 'a' + uid(), name: 'Nueva área', emoji: '⭐', color: PALETTE[S.areas.length % PALETTE.length] }); save(); render(); },
   delarea: el => { const id = el.closest('[data-area]').dataset.area; if (id === 'otros') return toast('El área Otros no se puede eliminar'); if (S.cats.some(c => c.area === id)) return toast('Mueve sus categorías a otra área primero'); S.areas = S.areas.filter(a => a.id !== id); save(); render(); },
   delcat: el => { const id = el.closest('[data-cat]').dataset.cat; if (S.cats.length <= 1) return toast('Debe quedar al menos una categoría'); const rm = () => { S.cats = S.cats.filter(c => c.id !== id); save(); render(); }; S.events.some(e => e.cat === id) ? confirmSheet('Hay eventos con esta categoría. Se mostrarán como "Otro".', 'Eliminar', rm) : rm(); },
-  addcat: () => { S.cats.push({ id: 'c' + uid(), name: 'Nueva', emoji: '✨', area: 'otros', points: 10 }); save(); render(); },
+  addcat: () => categorySheet(() => { closeSheet(); render(); }),
+  timer: el => {
+    const it = el.closest('.item'), ev = S.events.find(e => e.id === it.dataset.id), date = it.dataset.date; if (!ev) return;
+    if (timerOf(ev)) {
+      const r = stopTimer(ev);
+      if (r && r.el >= 60 && !(ev.res && ev.res[r.date])) { ev.res = ev.res || {}; ev.res[r.date] = 'done'; }
+      save(); render(); toast(r && r.el >= 60 ? compareText(ev, r.date) : 'Cronómetro descartado: duró menos de 1 minuto');
+    } else { startTimer(ev, date); save(); render(); toast('Cronómetro en marcha ⏱'); }
+  },
   setme: el => setMe(el.dataset.k),
   signout: async () => { try { await SB.signOut(); } catch { /* sin conexión */ } Store.save({ ...S, events: [] }); location.reload(); },
   cleardemo: () => { S.events = S.events.filter(e => !e.demo); save(); render(); toast('Ejemplos eliminados'); },
@@ -708,7 +857,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const p = e.target.dataset.person; if (p) { S.people[p].name = e.target.value.trim() || S.people[p].name; save(); render(); return; }
   const box = e.target.closest('[data-cat]');
-  if (box && e.target.dataset.f) { const c = S.cats.find(x => x.id === box.dataset.cat), f = e.target.dataset.f; c[f] = f === 'points' ? Math.max(0, +e.target.value || 0) : e.target.value; save(); render(); return; }
+  if (box && e.target.dataset.f) { const c = S.cats.find(x => x.id === box.dataset.cat), f = e.target.dataset.f; c[f] = f === 'points' ? Math.max(0, +e.target.value || 0) : e.target.type === 'checkbox' ? e.target.checked : e.target.value; save(); render(); return; }
   const arow = e.target.closest('[data-area]');
   if (arow && e.target.dataset.af) { const a = area(arow.dataset.area); a[e.target.dataset.af] = e.target.value.trim() || a[e.target.dataset.af]; save(); render(); return; }
   if (e.target.id === 'dayLimit') { S.settings.dayLimit = +e.target.value; save(); render(); }
@@ -721,12 +870,13 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet()
 let sx = null;
 main.addEventListener('touchstart', e => { sx = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
 main.addEventListener('touchend', e => {
-  if (sx === null || S.ui.tab !== 'plan' || root.children.length) return;
+  if (sx === null || (S.ui.tab !== 'plan' && S.ui.tab !== 'tiempo') || root.children.length) return;
   const dx = e.changedTouches[0].clientX - sx; sx = null;
   if (Math.abs(dx) > 70) move(dx < 0 ? 1 : -1);
 });
 
 render();
+setInterval(() => $$('.tick').forEach(el => { el.textContent = fmtDur(Math.round((Date.now() - +el.dataset.start) / 1000) + (+el.dataset.base || 0)); }), 1000);
 Store.save(S);
 initSync();
 if (!IN_ARTIFACT && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
