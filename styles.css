@@ -210,3 +210,19 @@ button{touch-action:manipulation}
 .trend span{font-size:17px;font-weight:600;color:var(--muted)}.trend span.now{color:var(--ink);font-size:20px;font-weight:800}.trend small{font-size:10px;font-weight:500;margin-left:2px}.trend i{color:var(--line);font-style:normal}
 .chk{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin:4px 0}.chk input{width:18px;height:18px;accent-color:var(--both)}
 .tabbar button{max-width:110px}
+
+/* desafío */
+.crown{margin-left:4px;font-size:18px}
+.crow{display:grid;grid-template-columns:minmax(0,1.1fr) 1.4fr auto;gap:10px;align-items:center;padding:5px 0;font-size:14px}
+.crow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow b{font-variant-numeric:tabular-nums;font-size:13px;min-width:46px;text-align:right}
+h4{margin:14px 0 4px;font-size:14px}
+.weeks{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.wk{flex:1;min-width:58px;background:var(--soft);border-radius:12px;padding:8px 4px;text-align:center;display:flex;flex-direction:column;gap:2px;min-height:68px;justify-content:center}
+.wk.now{outline:2px solid color-mix(in srgb,var(--gold) 70%,transparent)}.wk b{font-size:20px}.wk small{color:var(--muted);font-size:11px}
+.tally{display:flex;justify-content:center;gap:12px;align-items:baseline;font-size:15px;font-weight:600;margin:6px 0}.tally b{font-size:26px;margin-left:4px}.tally i{color:var(--line);font-style:normal}
+.prize{display:flex;gap:10px;align-items:center;background:linear-gradient(135deg,#FFF6E6,#FBEFE0);border-radius:14px;padding:10px 12px;margin-top:10px;font-size:14px}.prize.ok{background:linear-gradient(135deg,#EAF3E2,#DDEBD0)}
+.prow{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.prow span{flex:1;min-width:0}.prow b{font-size:13px;font-variant-numeric:tabular-nums}
+.padd{background:var(--soft);border-radius:14px;padding:10px;margin-top:8px}
+.okrow{display:flex;gap:14px;align-items:center;margin-bottom:6px;font-size:14px;color:var(--muted);font-weight:600}.okrow .yes{color:var(--both)}.okrow b{margin-left:auto;color:var(--ink)}
+.grid2{margin-bottom:12px}

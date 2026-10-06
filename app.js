@@ -99,7 +99,8 @@ function normalize() {
   S.ui = { tab: 'plan', view: 'week', layer: 'both', ...S.ui };
   delete S.ui.layers;
   S.people = S.people || defaultState().people;
-  S.settings = { dayLimit: 6, winStart: '08:00', winEnd: '22:00', ...S.settings };
+  S.settings = { dayLimit: 6, winStart: '08:00', winEnd: '22:00', compete: ['espiritual', 'salud'], ...S.settings };
+  S.pacts = S.pacts || {};
   S.cats = S.cats || defaultCats();
   S.events = (S.events || []).filter(e => !(e.demo && /yoga/i.test(e.title)));
   S.cats.forEach(c => { c.name = c.name.replace(/Ajava/g, 'Ahava'); });
@@ -139,7 +140,7 @@ let cursor = todayISO();
 
 /* ───────── sincronización (Daniel y Cami) ───────── */
 const Sync = { status: REMOTE ? 'connecting' : 'local', kind: SB ? 'supabase' : 'artifact', live: false, db: null, uid: null, canWrite: null, last: new Map(), cfg: '', cfgReady: false, q: Promise.resolve() };
-const cfgOf = () => ({ version: S.version || 3, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings });
+const cfgOf = () => ({ version: S.version || 3, people: S.people, areas: S.areas, cats: S.cats, settings: S.settings, pacts: S.pacts });
 const ME_PATH = () => 'data/users/' + Sync.uid + '/profile';
 
 function onSyncError(e) {
@@ -193,7 +194,7 @@ async function initSync() {
     db.doc('meta/config').onSnapshot(snap => {
       if (snap.exists) {
         const d = clone(snap.data());
-        S.people = d.people || S.people; S.areas = d.areas; S.cats = d.cats || S.cats; S.settings = d.settings || S.settings;
+        S.people = d.people || S.people; S.areas = d.areas; S.cats = d.cats || S.cats; S.settings = d.settings || S.settings; S.pacts = d.pacts || {};
         const { init, ...rest } = d;
         normalize(); Sync.cfg = STABLE(rest); Sync.cfgReady = true; flush();
       } else if (!snap.metadata.fromCache && !Sync.cfgReady) {
@@ -573,7 +574,154 @@ function renderTiempo() {
   ${trendRows ? `<div class="card fade"><h2>Evolución por sesión (promedio, 4 semanas)</h2>${trendRows}<div class="hint" style="margin-top:8px">Cuánto dura en promedio cada sesión, de la más antigua a la actual.</div></div>` : ''}`;
 }
 
+/* ───────── desafío: compromisos propios, metas juntos y premios ───────── */
+const monthOf = d => d.slice(0, 7);
+const monthName = m => fmt(m + '-01', { month: 'long' });
+const lastDay = m => { const [y, mo] = m.split('-').map(Number); return iso(new Date(y, mo, 0)); };
+const sumBy = (arr, f) => arr.reduce((n, x) => n + f(x), 0);
+const myKey = () => S.ui.me || 'a';
+const pactLocked = p => !!(p.ok && p.ok.a && p.ok.b);
+
+// Pacto de un mes: si no existe, parte como copia del mes anterior (sin confirmar). No se guarda hasta que alguien lo edita.
+function getPact(m) {
+  if (S.pacts[m]) return S.pacts[m];
+  const prev = Object.keys(S.pacts).filter(k => k < m).sort().pop(), b = prev ? S.pacts[prev] : null;
+  return { a: b ? clone(b.a) : [], b: b ? clone(b.b) : [], joint: b ? clone(b.joint) : [], prizes: b ? { ...b.prizes } : { win: '', joint: '' }, ok: { a: false, b: false }, pause: [], virtual: true };
+}
+function ensurePact(m) { if (!S.pacts[m] || S.pacts[m].virtual) { const p = getPact(m); delete p.virtual; S.pacts[m] = p; } return S.pacts[m]; }
+
+const commMatch = (c, it) => (c.cat ? it.ev.cat === c.cat : cat(it.ev.cat).area === c.area);
+const commLabel = c => (c.cat ? `${cat(c.cat).emoji} ${cat(c.cat).name}` : `${area(c.area).emoji} ${area(c.area).name}`);
+const commUnit = c => (c.kind === 'minutes' ? 'min' : c.target === 1 ? 'vez' : 'veces');
+
+// Avance de un compromiso personal en una semana.
+function commProgress(c, p, ws) {
+  const its = itemsBetween(ws, addDays(ws, 6)).filter(it => (it.ev.owner === p || it.ev.owner === 'both') && commMatch(c, it));
+  const val = c.kind === 'minutes' ? sumBy(its, it => spentMin(it).min) : its.filter(it => it.done).length;
+  return { val, pct: c.target > 0 ? Math.min(1, val / c.target) : 1 };
+}
+// Puntaje de una persona en la semana: promedio del % de sus compromisos en las áreas que compiten.
+function weekScore(p, ws) {
+  const pact = getPact(monthOf(ws)), list = pact[p].filter(c => S.settings.compete.includes(c.area));
+  if (!list.length) return null;
+  const rows = list.map(c => ({ c, ...commProgress(c, p, ws) }));
+  const byArea = {}; rows.forEach(r => { (byArea[r.c.area] = byArea[r.c.area] || []).push(r.pct); });
+  return { rows, pct: sumBy(rows, r => r.pct) / rows.length, byArea: Object.fromEntries(Object.entries(byArea).map(([k, v]) => [k, sumBy(v, x => x) / v.length])) };
+}
+function weekResult(ws) {
+  const pact = getPact(monthOf(ws)), paused = (pact.pause || []).includes(ws), A = weekScore('a', ws), B = weekScore('b', ws);
+  const complete = addDays(ws, 6) < todayISO();
+  let winner = null;
+  if (!paused && A && B) winner = Math.abs(A.pct - B.pct) < .005 ? 'tie' : A.pct > B.pct ? 'a' : 'b';
+  return { ws, A, B, paused, complete, winner };
+}
+function monthTally(m) {
+  let w = startOfWeek(m + '-01'); if (monthOf(w) < m) w = addDays(w, 7);
+  const weeks = []; for (; monthOf(w) === m; w = addDays(w, 7)) weeks.push(weekResult(w));
+  const done = weeks.filter(x => x.complete && x.winner), wins = { a: 0, b: 0 };
+  done.forEach(x => { if (x.winner !== 'tie') wins[x.winner]++; });
+  const avg = k => { const l = done.map(x => x[k.toUpperCase()].pct); return l.length ? sumBy(l, v => v) / l.length : null; };
+  const aA = avg('a'), aB = avg('b');
+  const leader = !done.length ? null : wins.a !== wins.b ? (wins.a > wins.b ? 'a' : 'b') : (Math.abs(aA - aB) < .005 ? 'tie' : aA > aB ? 'a' : 'b');
+  return { weeks, wins, aA, aB, leader, over: lastDay(m) < todayISO(), played: done.length };
+}
+function jointProgress(g, m) {
+  const its = itemsBetween(m + '-01', lastDay(m)).filter(it => it.ev.owner === 'both' && commMatch(g, it));
+  const val = g.kind === 'minutes' ? sumBy(its, it => spentMin(it).min) : its.filter(it => it.done).length;
+  return { val, pct: g.target > 0 ? Math.min(1, val / g.target) : 1 };
+}
+const pct100 = v => Math.round(v * 100) + '%';
+
+function pactSheet(m) {
+  let adding = null;
+  const draw = () => {
+    const p = getPact(m), locked = pactLocked(p), me = myKey();
+    const rowsOf = (scope, list, per) => list.map(c => `<div class="prow"><span>${commLabel(c)}</span><b>${c.target} ${commUnit(c)}${per}</b>${locked ? '' : `<button class="icon-btn" data-del="${scope}:${c.id}" aria-label="Quitar">×</button>`}</div>`).join('') || '<div class="hint" style="padding:4px 0">Sin compromisos todavía.</div>';
+    const addForm = () => {
+      const areas = adding.scope === 'joint' ? S.areas : S.areas.filter(a => S.settings.compete.includes(a.id));
+      return `<div class="padd"><div class="row"><select class="inp" id="pa-area">${areas.map(a => `<option value="${a.id}" ${a.id === adding.area ? 'selected' : ''}>${esc(a.emoji + ' ' + a.name)}</option>`).join('')}</select>
+        <select class="inp" id="pa-cat"><option value="">Cualquier categoría del área</option>${S.cats.filter(c => c.area === adding.area).map(c => `<option value="${c.id}" ${c.id === adding.cat ? 'selected' : ''}>${esc(c.emoji + ' ' + c.name)}</option>`).join('')}</select></div>
+        <div class="row" style="margin-top:8px"><select class="inp" id="pa-kind"><option value="count" ${adding.kind === 'count' ? 'selected' : ''}>Veces</option><option value="minutes" ${adding.kind === 'minutes' ? 'selected' : ''}>Minutos</option></select>
+        <input class="inp" id="pa-target" type="number" min="1" inputmode="numeric" value="${adding.target}" aria-label="Meta"></div>
+        <div class="hint" style="margin:6px 0">${adding.scope === 'joint' ? 'Por mes, contando solo lo que hacen los dos juntos.' : 'Por semana.'}</div>
+        <div class="actions"><button class="btn ghost" data-padd-cancel>Cancelar</button><button class="btn" data-padd-ok>Agregar</button></div></div>`;
+    };
+    const section = (scope, title, list, per) => `<h4>${title}</h4>${rowsOf(scope, list, per)}${locked ? '' : adding && adding.scope === scope ? addForm() : `<button class="opt" data-padd="${scope}" style="margin-top:6px">+ Agregar</button>`}`;
+    openSheet(`<h3>Pacto de ${esc(monthName(m))}</h3>
+      <p class="hint" style="margin:-8px 0 12px">Cada uno define sus compromisos de la semana. Cuando los dos aceptan, el pacto queda fijo todo el mes.</p>
+      <div class="okrow">${['a', 'b'].map(k => `<span class="${p.ok && p.ok[k] ? 'yes' : ''}">${p.ok && p.ok[k] ? '✓' : '○'} ${esc(who(k).name)}</span>`).join('')}${locked ? '<b>Pacto fijo</b>' : ''}</div>
+      ${section('a', 'Compromisos de ' + esc(who('a').name), p.a, ' / sem')}
+      ${section('b', 'Compromisos de ' + esc(who('b').name), p.b, ' / sem')}
+      ${section('joint', 'Metas juntos', p.joint, ' / mes')}
+      <h4>Premios del mes</h4>
+      <div class="field"><label for="pz-win">Premio para quien gane el mes</label><input class="inp" id="pz-win" value="${esc(p.prizes.win)}" placeholder="Ej. Elige la película y el postre" ${locked ? 'disabled' : ''}></div>
+      <div class="field"><label for="pz-joint">Premio si cumplen las metas juntos</label><input class="inp" id="pz-joint" value="${esc(p.prizes.joint)}" placeholder="Ej. Cena especial afuera" ${locked ? 'disabled' : ''}></div>
+      <div class="actions">${locked ? '<button class="btn ghost" data-reopen>Reabrir pacto</button>' : `<button class="btn ${p.ok && p.ok[me] ? 'ghost' : ''}" data-accept>${p.ok && p.ok[me] ? 'Quitar mi aceptación' : 'Acepto el pacto'}</button>`}<button class="btn ghost" data-act="closeSheet">Cerrar</button></div>`, sh => {
+      const bind = (id, f) => { const el = $(id, sh); if (el) el.onchange = () => f(el); };
+      bind('#pa-area', el => { adding.area = el.value; adding.cat = ''; draw(); });
+      bind('#pa-cat', el => { adding.cat = el.value; });
+      bind('#pa-kind', el => { adding.kind = el.value; adding.target = el.value === 'minutes' ? 30 : 3; draw(); });
+      bind('#pa-target', el => { adding.target = Math.max(1, +el.value || 1); });
+      bind('#pz-win', el => { ensurePact(m).prizes.win = el.value.trim(); save(); });
+      bind('#pz-joint', el => { ensurePact(m).prizes.joint = el.value.trim(); save(); });
+      sh.onclick = e => {
+        const b = e.target.closest('button'); if (!b) return;
+        const d = b.dataset;
+        if (d.padd) { const areas = d.padd === 'joint' ? S.areas : S.areas.filter(a => S.settings.compete.includes(a.id)); adding = { scope: d.padd, area: areas[0].id, cat: '', kind: 'count', target: 3 }; draw(); }
+        else if ('paddCancel' in d) { adding = null; draw(); }
+        else if ('paddOk' in d) {
+          const tg = Math.max(1, +($('#pa-target', sh).value) || adding.target), pc = ensurePact(m), item = { id: uid(), area: adding.area, cat: adding.cat || '', kind: adding.kind, target: tg };
+          (adding.scope === 'joint' ? pc.joint : pc[adding.scope]).push(item); pc.ok = { a: false, b: false }; adding = null; save(); draw();
+        }
+        else if (d.del) { const [sc, id] = d.del.split(':'), pc = ensurePact(m); const list = sc === 'joint' ? pc.joint : pc[sc]; list.splice(list.findIndex(x => x.id === id), 1); pc.ok = { a: false, b: false }; save(); draw(); }
+        else if ('accept' in d) { const pc = ensurePact(m); pc.ok = pc.ok || { a: false, b: false }; pc.ok[me] = !pc.ok[me]; save(); draw(); if (pactLocked(pc)) toast('Pacto fijo para todo el mes 🤝'); }
+        else if ('reopen' in d) { confirmSheet('Reabrir el pacto pide que los dos vuelvan a aceptarlo.', 'Reabrir', () => { ensurePact(m).ok = { a: false, b: false }; save(); pactSheet(m); render(); }); }
+      };
+    });
+  };
+  draw();
+}
+
+function renderDesafio() {
+  const t = todayISO(), ws = startOfWeek(t), wm = monthOf(ws), cm = monthOf(t), pact = getPact(wm), me = myKey();
+  const wr = weekResult(ws), mt = monthTally(cm), cp = getPact(cm);
+  const nm = k => esc(who(k).name) + (me === k ? ' (tú)' : '');
+  const empty = !pact.a.length && !pact.b.length;
+  const crown = k => (wr.winner === k ? '<span class="crown">👑</span>' : '');
+  const head = !wr.A || !wr.B ? ['🤝', 'Falta el pacto', 'Definan los compromisos de cada uno para empezar el desafío.']
+    : wr.paused ? ['⏸️', 'Semana en pausa', 'No cuenta para el desafío.']
+    : wr.winner === 'tie' ? ['⚖️', wr.complete ? 'Semana empatada' : 'Van empatados', 'Mismo porcentaje de cumplimiento.']
+    : [wr.complete ? '👑' : '🔥', wr.complete ? `Ganó ${who(wr.winner).name} la semana` : `${who(wr.winner).name} va ganando`, `${pct100(wr['AB'[wr.winner === 'a' ? 0 : 1]].pct)} contra ${pct100(wr['AB'[wr.winner === 'a' ? 1 : 0]].pct)} de sus compromisos.`];
+  const person = (k, sc) => `<div class="card score fade"><div class="who"><i style="background:${ownerColor(k)}"></i>${nm(k)}${crown(k)}</div><div class="big">${sc ? pct100(sc.pct) : '—'}</div><div class="bar" style="margin:6px 0"><div style="width:${sc ? sc.pct * 100 : 0}%;background:${ownerColor(k)}"></div></div><small>${sc ? sc.rows.length + ' compromiso' + (sc.rows.length > 1 ? 's' : '') : 'Sin compromisos'}</small></div>`;
+  const rowsHTML = (k, sc) => sc ? sc.rows.map(r => `<div class="crow"><span>${commLabel(r.c)}</span><div class="bar"><div style="width:${r.pct * 100}%;background:${ownerColor(k)}"></div></div><b>${r.val}/${r.c.target}${r.c.kind === 'minutes' ? ' min' : ''}</b></div>`).join('') : '<div class="hint">Sin compromisos en áreas que compiten.</div>';
+  const compAreas = S.areas.filter(a => S.settings.compete.includes(a.id));
+  const areaBars = wr.A && wr.B ? compAreas.map(a => `<div class="area-row"><div class="area-h"><span>${a.emoji}</span> <b>${esc(a.name)}</b></div>${['a', 'b'].map(k => { const v = (k === 'a' ? wr.A : wr.B).byArea[a.id]; return `<div class="crow"><span>${esc(who(k).name)}</span><div class="bar"><div style="width:${(v || 0) * 100}%;background:${ownerColor(k)}"></div></div><b>${v === undefined ? '—' : pct100(v)}</b></div>`; }).join('')}</div>`).join('') : '';
+  const jRows = cp.joint.map(g => ({ g, ...jointProgress(g, cm) }));
+  const jDone = jRows.length && jRows.every(r => r.pct >= 1);
+  const wLabel = x => x.paused ? '⏸' : !x.winner ? '·' : !x.complete ? '🔥' : x.winner === 'tie' ? '＝' : '👑';
+  const mLead = mt.leader && mt.leader !== 'tie' ? who(mt.leader).name : null;
+  return `<div class="insight fade"><div class="emoji">${head[0]}</div><div><p>${esc(head[1])}<small>${esc(head[2])}</small></p></div></div>
+  <div class="grid2">${person('a', wr.A)}${person('b', wr.B)}</div>
+  ${empty ? '' : `<div class="card fade"><h2>Compromisos de la semana</h2>${['a', 'b'].map(k => `<h4 style="color:${ownerColor(k)}">${nm(k)}</h4>${rowsHTML(k, k === 'a' ? wr.A : wr.B)}`).join('')}</div>`}
+  ${areaBars ? `<div class="card fade"><h2>Por área</h2>${areaBars}</div>` : ''}
+  <div class="actions" style="margin:12px 0"><button class="btn" data-act="pact">${pactLocked(cp) ? 'Ver' : 'Armar'} el pacto de ${esc(monthName(cm))}</button>${wr.paused ? '' : '<button class="btn ghost" data-act="pause">Pausar semana</button>'}${wr.paused ? '<button class="btn ghost" data-act="pause">Quitar pausa</button>' : ''}</div>
+  ${!pactLocked(cp) && (cp.a.length || cp.b.length) ? `<div class="insight warn fade"><div class="emoji">📝</div><div><p>Pacto sin confirmar<small>Los dos deben aceptarlo para que quede fijo el mes.</small></p></div></div>` : ''}
+  <div class="card fade"><h2>${esc(monthName(cm))} · semanas</h2>
+    <div class="weeks">${mt.weeks.map(x => `<div class="wk ${x.ws === ws ? 'now' : ''}"><small>${fmt(x.ws, { day: 'numeric', month: 'short' })}</small><b>${wLabel(x)}</b><small>${x.winner && x.winner !== 'tie' && x.complete ? esc(who(x.winner).name) : ''}</small></div>`).join('')}</div>
+    <div class="tally"><span style="color:${ownerColor('a')}">${esc(who('a').name)} <b>${mt.wins.a}</b></span><i>–</i><span style="color:${ownerColor('b')}">${esc(who('b').name)} <b>${mt.wins.b}</b></span></div>
+    <div class="hint" style="text-align:center">${mt.played ? (mLead ? `${esc(mLead)} ${mt.over ? 'ganó' : 'lidera'} el mes` : 'Empate por ahora') : 'Aún no hay semanas terminadas'}${mt.aA !== null ? ` · promedio ${pct100(mt.aA)} y ${pct100(mt.aB)}` : ''}</div>
+    ${cp.prizes.win ? `<div class="prize">🏆 <span>Premio del mes: <b>${esc(cp.prizes.win)}</b></span></div>` : ''}</div>
+  <div class="card fade"><h2>Metas juntos · ${esc(monthName(cm))}</h2>
+    ${jRows.length ? jRows.map(r => `<div class="crow"><span>${commLabel(r.g)}</span><div class="bar"><div style="width:${r.pct * 100}%;background:var(--both)"></div></div><b>${r.val}/${r.g.target}${r.g.kind === 'minutes' ? ' min' : ''}</b></div>`).join('') : '<div class="hint">Todavía no hay metas juntos. Agréguenlas en el pacto del mes.</div>'}
+    ${jDone ? '<div class="prize ok">🎉 <span>¡Cumplieron las metas juntos!' + (cp.prizes.joint ? ` <b>${esc(cp.prizes.joint)}</b>` : '') + '</span></div>' : cp.prizes.joint ? `<div class="prize">🎁 <span>Si las cumplen: <b>${esc(cp.prizes.joint)}</b></span></div>` : ''}</div>`;
+}
+
 function renderLogros() {
+  const v = S.ui.logrosView || 'desafio';
+  return `<div class="seg" style="margin-bottom:12px"><button data-lv="desafio" class="${v === 'desafio' ? 'on' : ''}">Desafío</button><button data-lv="progreso" class="${v === 'progreso' ? 'on' : ''}">Progreso</button></div>` + (v === 'desafio' ? renderDesafio() : renderProgreso());
+}
+
+function renderProgreso() {
   const t = todayISO(), ws = startOfWeek(t), we = addDays(ws, 6), all0 = earliest();
   const A = pointsFor('a', ws, we), B = pointsFor('b', ws, we), T = teamPoints(ws, we), plan = plannedPoints(ws, we);
   const total = teamPoints(all0, t), lv = level(total);
@@ -628,7 +776,7 @@ function renderAjustes() {
 function periodTitle() {
   const v = S.ui.view;
   if (S.ui.tab === 'tiempo') { const a = startOfWeek(cursor), b = addDays(a, 6); return [`${fmt(a, { day: 'numeric' })} – ${fmt(b, { day: 'numeric', month: 'short' })}`, 'Tiempo de la semana']; }
-  if (S.ui.tab === 'logros') return ['Logros', 'Su avance juntos'];
+  if (S.ui.tab === 'logros') return ['Logros', 'Desafío y progreso'];
   if (S.ui.tab === 'ajustes') return ['Ajustes', 'Personaliza el espacio'];
   if (v === 'day') return [fmt(cursor, { weekday: 'long', day: 'numeric' }), fmt(cursor, { month: 'long', year: 'numeric' })];
   if (v === 'week') { const a = startOfWeek(cursor), b = addDays(a, 6); return [`${fmt(a, { day: 'numeric' })} – ${fmt(b, { day: 'numeric', month: 'short' })}`, fmt(b, { year: 'numeric' })]; }
@@ -841,6 +989,13 @@ const actions = {
     } else { startTimer(ev, date); save(); render(); toast('Cronómetro en marcha ⏱'); }
   },
   setme: el => setMe(el.dataset.k),
+  pact: () => pactSheet(monthOf(todayISO())),
+  pause: () => {
+    const ws = startOfWeek(todayISO()), m = monthOf(ws), paused = (getPact(m).pause || []).includes(ws);
+    confirmSheet(paused ? '¿Volver a contar esta semana en el desafío?' : 'Esta semana no contará para el desafío (viaje, enfermedad…).', paused ? 'Quitar pausa' : 'Pausar semana', () => {
+      const p = ensurePact(m); p.pause = p.pause || []; const i = p.pause.indexOf(ws); i >= 0 ? p.pause.splice(i, 1) : p.pause.push(ws); save(); render();
+    });
+  },
   signout: async () => { try { await SB.signOut(); } catch { /* sin conexión */ } Store.save({ ...S, events: [] }); location.reload(); },
   cleardemo: () => { S.events = S.events.filter(e => !e.demo); save(); render(); toast('Ejemplos eliminados'); },
   reset: () => confirmSheet(Sync.live ? '¿Borrar todos los eventos de Daniel y Cami?' : '¿Borrar todos los datos de este dispositivo?', 'Borrar todo', () => { const ui = S.ui, people = S.people; S = defaultState(); S.ui = ui; S.people = people; S.events = []; save(); render(); toast('Todo borrado'); }),
@@ -850,6 +1005,7 @@ const actions = {
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (el && actions[el.dataset.act]) { e.stopPropagation(); actions[el.dataset.act](el); return; }
+  const lv = e.target.closest('[data-lv]'); if (lv) { S.ui.logrosView = lv.dataset.lv; save(); render(); return; }
   const v = e.target.closest('#viewSeg button'); if (v) { S.ui.view = v.dataset.view; save(); render(); return; }
   const t = e.target.closest('.tabbar button'); if (t) { S.ui.tab = t.dataset.tab; save(); render(); window.scrollTo(0, 0); }
 });
