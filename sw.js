@@ -1,4 +1,4 @@
-const CACHE = 'familia-v11';
+const CACHE = 'familia-v12';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'supabase-adapter.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/apple-icon-v2-180.png', 'icons/app-icon-v2-192.png', 'icons/app-icon-v2-512.png'];
 
 self.addEventListener('install', e => {
@@ -10,7 +10,8 @@ self.addEventListener('activate', e => {
 // Red primero (para recibir cambios), caché como respaldo sin conexión.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(fetch(e.request).then(r => {
+  // 'no-cache' revalida con el servidor en cada carga (GitHub Pages guarda los archivos 10 min en el navegador).
+  e.respondWith(fetch(new Request(e.request, { cache: 'no-cache' })).then(r => {
     const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r;
   }).catch(() => caches.match(e.request)));
 });
