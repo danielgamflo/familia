@@ -76,7 +76,7 @@ input,select,textarea{font:inherit;color:inherit}
 .day-card .dn small{color:var(--muted);font-weight:500;margin-left:6px}
 .day-card .item{padding:7px 2px}
 .day-card .free-note{font-size:12px;color:var(--both);font-weight:600;margin-top:6px}
-@media(min-width:820px){.week{grid-template-columns:repeat(7,minmax(0,1fr));align-items:start;gap:8px}.day-card{padding:10px}.day-card .item .time{display:none}.day-card .tag{display:none}}
+@media(min-width:820px){.week{grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:12px}.day-card{padding:12px 14px}.day-card .item .time{display:none}}
 
 /* month */
 .month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
@@ -237,10 +237,3 @@ body.sheet-open{overflow:hidden}
 .day-card{min-width:0}.day-card .item .body{min-width:0}
 /* semana: los títulos largos pueden ocupar dos líneas */
 .day-card .item .t{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25}
-/* semana en pantalla ancha: el título usa todo el ancho y los botones van debajo, a la derecha */
-@media(min-width:820px){
-  .day-card .item{flex-wrap:wrap;row-gap:4px}
-  .day-card .item .body{flex:1 1 calc(100% - 20px)}
-  .day-card .item .tbtn,.day-card .item .check{margin-left:auto}
-  .day-card .item .tbtn ~ .check{margin-left:6px}
-}
