@@ -231,3 +231,5 @@ h4{margin:14px 0 4px;font-size:14px}
 body.sheet-open{overflow:hidden}
 .sheet{max-height:92vh;max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
 .sheet.still,.scrim.still{animation:none}
+
+.linkbtn{display:block;margin:14px auto 0;font-size:13px;color:var(--muted);text-decoration:underline}

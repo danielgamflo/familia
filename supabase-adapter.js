@@ -66,6 +66,11 @@
   api.signIn = async (email, password) => { const r = await sb.auth.signInWithPassword({ email, password }); if (r.error) throw r.error; return r.data.session; };
   api.signUp = async (email, password) => { const r = await sb.auth.signUp({ email, password }); if (r.error) throw r.error; return r.data; };
   api.signOut = async () => { await sb.auth.signOut(); };
+  // Recuperar contraseña: el correo trae un enlace que vuelve a la app con una sesión de recuperación.
+  api.recoveryHint = /type=recovery/.test(window.location.hash || '');
+  api.resetPassword = async email => { const r = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname }); if (r.error) throw r.error; };
+  api.updatePassword = async password => { const r = await sb.auth.updateUser({ password }); if (r.error) throw r.error; };
+  api.onRecovery = cb => sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') cb(); });
   // Devuelve quién es el usuario (Daniel = a, Cami = b) y si su correo está autorizado.
   api.connect = async () => {
     const s = await api.session(); if (!s) return null;

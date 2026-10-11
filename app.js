@@ -236,16 +236,39 @@ function loginScreen(msg) {
     <div class="field"><label for="lg-email">Correo</label><input class="inp" id="lg-email" type="email" autocomplete="email" required></div>
     <div class="field"><label for="lg-pass">Contraseña</label><input class="inp" id="lg-pass" type="password" autocomplete="current-password" minlength="6" required></div>
     <p class="login-msg" id="lg-msg">${esc(msg || '')}</p>
-    <div class="actions"><button class="btn ghost" type="button" id="lg-up">Crear cuenta</button><button class="btn" type="submit" id="lg-in">Entrar</button></div></form>`;
+    <div class="actions"><button class="btn ghost" type="button" id="lg-up">Crear cuenta</button><button class="btn" type="submit" id="lg-in">Entrar</button></div>
+    <button class="linkbtn" type="button" id="lg-forgot">¿Olvidaste tu contraseña?</button></form>`;
   const msgEl = $('#lg-msg', el), say = t => { msgEl.textContent = t; };
   const creds = () => ({ email: $('#lg-email', el).value.trim(), password: $('#lg-pass', el).value });
   const nice = e => /invalid login/i.test(e.message) ? 'Correo o contraseña incorrectos.' : /already/i.test(e.message) ? 'Ese correo ya tiene cuenta. Usa Entrar.' : /password/i.test(e.message) ? 'La contraseña debe tener al menos 6 caracteres.' : /confirm/i.test(e.message) ? 'Confirma tu correo desde el mensaje que te llegó.' : 'No se pudo conectar. Revisa tu conexión.';
   const done = () => { el.remove(); Sync.status = 'connecting'; render(); initSync(); };
+  $('#lg-forgot', el).onclick = async () => {
+    const email = $('#lg-email', el).value.trim(); if (!email) return say('Escribe tu correo arriba y vuelve a tocar este botón.');
+    say('Enviando…');
+    try { await SB.resetPassword(email); say('Listo. Revisa tu correo (también en spam) y toca el enlace.'); } catch (e) { say('No se pudo enviar. Espera unos minutos y reintenta.'); }
+  };
   $('#loginForm', el).onsubmit = async ev => { ev.preventDefault(); const c = creds(); say('Entrando…'); try { await SB.signIn(c.email, c.password); done(); } catch (e) { say(nice(e)); } };
   $('#lg-up', el).onclick = async () => {
     const c = creds(); if (!c.email || c.password.length < 6) return say('Escribe tu correo y una contraseña de al menos 6 caracteres.');
     say('Creando cuenta…');
     try { const r = await SB.signUp(c.email, c.password); if (r.session) done(); else say('Cuenta creada. Revisa tu correo para confirmarla y luego toca Entrar.'); } catch (e) { say(nice(e)); }
+  };
+}
+
+function recoveryScreen() {
+  let el = $('#login'); if (!el) { el = document.createElement('div'); el.id = 'login'; document.body.appendChild(el); }
+  el.className = 'login';
+  el.innerHTML = `<form class="login-card" id="rcForm"><div class="login-logo">🔑</div><h2>Nueva contraseña</h2><p class="hint">Elige una contraseña nueva para tu cuenta.</p>
+    <div class="field"><label for="rc-p1">Contraseña nueva</label><input class="inp" id="rc-p1" type="password" autocomplete="new-password" minlength="6" required></div>
+    <div class="field"><label for="rc-p2">Repítela</label><input class="inp" id="rc-p2" type="password" autocomplete="new-password" minlength="6" required></div>
+    <p class="login-msg" id="rc-msg"></p><div class="actions"><button class="btn" type="submit">Guardar</button></div></form>`;
+  $('#rcForm', el).onsubmit = async ev => {
+    ev.preventDefault(); const p1 = $('#rc-p1', el).value, p2 = $('#rc-p2', el).value, msg = $('#rc-msg', el);
+    if (p1.length < 6) { msg.textContent = 'Usa al menos 6 caracteres.'; return; }
+    if (p1 !== p2) { msg.textContent = 'Las contraseñas no coinciden.'; return; }
+    msg.textContent = 'Guardando…';
+    try { await SB.updatePassword(p1); el.remove(); history.replaceState(null, '', location.pathname); Sync.status = 'connecting'; render(); initSync(); toast('Contraseña actualizada ✓'); }
+    catch (e) { msg.textContent = 'No se pudo guardar. Abre de nuevo el enlace del correo.'; }
   };
 }
 
@@ -1070,6 +1093,7 @@ main.addEventListener('touchend', e => {
 render();
 setInterval(() => $$('.tick').forEach(el => { el.textContent = fmtDur(Math.round((Date.now() - +el.dataset.start) / 1000) + (+el.dataset.base || 0)); }), 1000);
 Store.save(S);
-initSync();
+if (SB) SB.onRecovery(() => { if (!$('#rcForm')) recoveryScreen(); });
+if (SB && SB.recoveryHint) recoveryScreen(); else initSync();
 if (!IN_ARTIFACT && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
