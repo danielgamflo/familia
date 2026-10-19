@@ -188,3 +188,37 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .tabbar button span.lbl{font-size:11px;filter:none;opacity:1;transform:none}
 .tabbar button.on span.lbl{transform:none}
 @media(max-width:1099px){.side h5.lbl,.side .nm.lbl,.side .syncline.lbl{display:none}}
+
+/* ── íconos propios (contorno) ── */
+svg.ic{width:1.2em;height:1.2em;vertical-align:-.22em;stroke-width:1.7;flex:none}
+.tag svg.ic,.spent svg.ic{width:1em;height:1em;vertical-align:-.15em}
+.insight .emoji svg.ic{width:24px;height:24px}
+.check svg.ic{width:17px;height:17px;vertical-align:middle}
+.tbtn svg.ic{width:15px;height:15px;vertical-align:middle}
+.tbtn.run svg.ic{margin-left:2px}
+.icon-btn svg.ic{width:20px;height:20px;vertical-align:middle}
+.fab svg.ic,.newbtn .plus svg.ic{width:22px;height:22px;vertical-align:middle}
+.newbtn .plus svg.ic{width:18px;height:18px}
+.area-card .ai svg.ic{width:22px;height:22px}
+.badge b svg.ic{width:22px;height:22px}
+.prize svg.ic{width:22px;height:22px;margin-top:0}
+.crown svg.ic{width:20px;height:20px;vertical-align:-.3em}
+.login-logo svg.ic{width:38px;height:38px}
+.out b svg.ic{width:18px;height:18px;vertical-align:-.25em}
+.stars svg.ic{width:20px;height:20px;margin:0 1px;vertical-align:middle}
+.stars svg.ic.on{fill:var(--butter)}
+.stars svg.ic.off{opacity:.35}
+.up svg.ic,.neg svg.ic,.warn-t svg.ic{width:14px;height:14px;vertical-align:-.15em}
+.trend i svg.ic{width:14px;height:14px;color:var(--muted)}
+.ah em svg.ic{width:14px;height:14px;vertical-align:-.15em}
+.okrow svg.ic{width:14px;height:14px;vertical-align:-.15em}
+.wk b svg.ic{width:22px;height:22px}
+.star-fly svg.ic{width:28px;height:28px;fill:var(--butter)}
+.leg svg.ic,.area-h svg.ic{width:20px;height:20px;vertical-align:-.3em}
+.iconbtn{width:44px;height:44px;border-radius:50%;background:#fff;display:grid;place-items:center;flex:none;border:1.5px solid var(--line)}
+.iconbtn.lg{width:52px;height:52px}
+.iconbtn svg.ic{width:22px;height:22px}
+.icongrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:8px}
+.ibtn{height:54px;border-radius:18px;background:#fff;display:grid;place-items:center;border:1.5px solid transparent}
+.ibtn svg.ic{width:24px;height:24px}
+.ibtn.on{border-color:var(--ink);background:var(--butter)}
