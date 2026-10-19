@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#F7F2EA">
+<meta name="theme-color" content="#FBF6F0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -12,10 +12,26 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-icon-v2-180.png">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=15">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="theme.css?v=15">
 </head>
 <body>
-<div id="app">
+<div id="shell">
+  <aside class="side" id="side">
+    <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="4"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></span><b class="lbl">Familia</b></div>
+    <button class="newbtn" data-act="add" aria-label="Agregar"><span class="plus">+</span><span class="lbl">Agregar</span></button>
+    <nav class="menu">
+    <button data-tab="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="4"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg><span class="lbl">Plan</span></button>
+    <button data-tab="tiempo"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2M9.5 3h5"/></svg><span class="lbl">Tiempo</span></button>
+    <button data-tab="logros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8L3.5 9.7l5.9-.9z"/></svg><span class="lbl">Logros</span></button>
+    <button data-tab="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M18 7h2M4 17h3M12 17h8"/><circle cx="15.5" cy="7" r="2.3"/><circle cx="9.5" cy="17" r="2.3"/></svg><span class="lbl">Ajustes</span></button>
+    </nav>
+    <div class="members" id="members"></div>
+  </aside>
+  <div id="app">
   <header class="topbar">
     <div class="topbar-row">
       <div class="period">
@@ -41,21 +57,23 @@
   <main id="main"></main>
 
   <button class="fab" id="fab" data-act="add" aria-label="Agregar">+</button>
-
-  <nav class="tabbar">
-    <button data-tab="plan"><span>📅</span>Plan</button>
-    <button data-tab="tiempo"><span>⏱️</span>Tiempo</button>
-    <button data-tab="logros"><span>⭐</span>Logros</button>
-    <button data-tab="ajustes"><span>⚙️</span>Ajustes</button>
-  </nav>
+  </div>
+  <aside class="aside" id="aside"></aside>
 </div>
+
+<nav class="tabbar">
+    <button data-tab="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="4"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg><span class="lbl">Plan</span></button>
+    <button data-tab="tiempo"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2M9.5 3h5"/></svg><span class="lbl">Tiempo</span></button>
+    <button data-tab="logros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8L3.5 9.7l5.9-.9z"/></svg><span class="lbl">Logros</span></button>
+    <button data-tab="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M18 7h2M4 17h3M12 17h8"/><circle cx="15.5" cy="7" r="2.3"/><circle cx="9.5" cy="17" r="2.3"/></svg><span class="lbl">Ajustes</span></button>
+</nav>
 
 <div id="sheetRoot"></div>
 <div id="toast" class="toast" role="status"></div>
 
-<script src="config.js?v=13"></script>
+<script src="config.js?v=15"></script>
 <script src="vendor/supabase.js"></script>
-<script src="supabase-adapter.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="supabase-adapter.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

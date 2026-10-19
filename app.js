@@ -17,7 +17,7 @@ const fromMin = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
 const L = new Intl.DateTimeFormat('es-CL');
 const fmt = (s, o) => new Intl.DateTimeFormat('es-CL', o).format(parse(s));
 const hrs = m => { const h = m / 60; return (Math.round(h * 10) / 10).toString().replace('.', ',') + ' h'; };
-const PALETTE = ['#6E8CA8', '#C47F7A', '#8AA07C', '#D9A441', '#9B86B0', '#C8956B', '#6FA3A0', '#B8A38A'];
+const PALETTE = ['#7E9BF0', '#F2909B', '#6FCFA5', '#F6C177', '#B7A6F2', '#8DB6F2', '#6FD0C9', '#C9BFB4'];
 
 /* ───────── estado y almacenamiento ───────── */
 // Toda la persistencia pasa por `Store`. Para sincronizar con Cami en la nube
@@ -29,13 +29,13 @@ const Store = {
 };
 
 const defaultAreas = () => [
-  { id: 'espiritual', name: 'Espiritual', emoji: '🕊️', color: '#9B86B0' },
-  { id: 'relaciones', name: 'Relaciones', emoji: '🤝', color: '#C47F7A' },
-  { id: 'salud', name: 'Salud', emoji: '💪', color: '#8AA07C' },
-  { id: 'hogar', name: 'Hogar', emoji: '🏠', color: '#D9A441' },
-  { id: 'trabajo', name: 'Trabajo', emoji: '💼', color: '#6E8CA8' },
-  { id: 'freelance', name: 'Freelance y proyectos', emoji: '🧑‍💻', color: '#6FA3A0' },
-  { id: 'otros', name: 'Otros', emoji: '✨', color: '#B8A38A' }
+  { id: 'espiritual', name: 'Espiritual', emoji: '🕊️', color: '#B7A6F2' },
+  { id: 'relaciones', name: 'Relaciones', emoji: '🤝', color: '#F29EA0' },
+  { id: 'salud', name: 'Salud', emoji: '💪', color: '#7FD1AE' },
+  { id: 'hogar', name: 'Hogar', emoji: '🏠', color: '#F6C177' },
+  { id: 'trabajo', name: 'Trabajo', emoji: '💼', color: '#8DB6F2' },
+  { id: 'freelance', name: 'Freelance y proyectos', emoji: '🧑‍💻', color: '#6FD0C9' },
+  { id: 'otros', name: 'Otros', emoji: '✨', color: '#C9BFB4' }
 ];
 // Las áreas agrupan categorías y se usan para medir el crecimiento. El color del tema viene del área.
 const defaultCats = () => [
@@ -74,8 +74,8 @@ function seedEvents() {
 }
 
 const defaultState = () => ({
-  version: 3,
-  people: { a: { name: 'Daniel', color: '#6E8CA8' }, b: { name: 'Cami', color: '#C47F7A' }, both: { name: 'Juntos', color: '#8AA07C' } },
+  version: 5,
+  people: { a: { name: 'Daniel', color: '#7E9BF0' }, b: { name: 'Cami', color: '#F2909B' }, both: { name: 'Juntos', color: '#6FCFA5' } },
   areas: defaultAreas(),
   cats: defaultCats(),
   events: seedEvents(),
@@ -115,7 +115,7 @@ function normalize() {
   if ((S.version || 0) < 3) {
     const tr = S.areas.find(a => a.id === 'trabajo');
     if (tr && tr.name === 'Trabajo y proyectos') tr.name = 'Trabajo';
-    if (!S.areas.some(a => a.id === 'freelance')) S.areas.splice(Math.max(0, S.areas.findIndex(a => a.id === 'otros')), 0, { id: 'freelance', name: 'Freelance y proyectos', emoji: '🧑‍💻', color: '#6FA3A0' });
+    if (!S.areas.some(a => a.id === 'freelance')) S.areas.splice(Math.max(0, S.areas.findIndex(a => a.id === 'otros')), 0, { id: 'freelance', name: 'Freelance y proyectos', emoji: '🧑‍💻', color: '#6FD0C9' });
     const add = (id, name, emoji, area, points, extra) => { if (!S.cats.some(c => c.id === id)) S.cats.push({ id, name, emoji, area, points, ...extra }); };
     add('trabajo', 'Trabajo', '💻', 'trabajo', 10, { noload: true });
     add('freelance', 'Freelance', '🧑‍💻', 'freelance', 15);
@@ -133,6 +133,14 @@ function normalize() {
       if (dest.name === 'Oración') dest.name = 'Tiempo con Dios';
     }
     S.version = 4;
+  }
+  if ((S.version || 0) < 5) {
+    const NEWA = { espiritual: '#B7A6F2', relaciones: '#F29EA0', salud: '#7FD1AE', hogar: '#F6C177', trabajo: '#8DB6F2', freelance: '#6FD0C9', otros: '#C9BFB4' };
+    const OLDA = { espiritual: '#9b86b0', relaciones: '#c47f7a', salud: '#8aa07c', hogar: '#d9a441', trabajo: '#6e8ca8', freelance: '#6fa3a0', otros: '#b8a38a' };
+    S.areas.forEach(a => { if (OLDA[a.id] && String(a.color).toLowerCase() === OLDA[a.id]) a.color = NEWA[a.id]; });
+    const NP = { a: '#7E9BF0', b: '#F2909B', both: '#6FCFA5' }, OP = { a: '#6e8ca8', b: '#c47f7a', both: '#8aa07c' };
+    ['a', 'b', 'both'].forEach(k => { if (S.people[k] && String(S.people[k].color).toLowerCase() === OP[k]) S.people[k].color = NP[k]; });
+    S.version = 5;
   }
   // estado de cada ocurrencia: ev.res[fecha] = done | missed | cancelled | moved
   S.events.forEach(e => {
@@ -818,6 +826,41 @@ function periodTitle() {
   return [fmt(cursor, { month: 'long' }), fmt(cursor, { year: 'numeric' })];
 }
 
+/* ───────── menú lateral y panel de análisis (escritorio) ───────── */
+const DESKTOP_ASIDE = window.matchMedia('(min-width:1380px)');
+const initial = k => (who(k).name || '?').trim().charAt(0).toUpperCase();
+const syncText = () => ({ live: 'En vivo', connecting: 'Conectando…', local: 'Solo en este equipo', error: 'Sin conexión', login: 'Sin sesión', denied: 'No autorizado' }[Sync.status] || '');
+
+function renderMembers() {
+  const ws = startOfWeek(todayISO()), we = addDays(ws, 6);
+  $('#members').innerHTML = `<h5 class="lbl">Miembros</h5>` + ['a', 'b'].map(k => `<div class="mem"><span class="av" style="background:${ownerColor(k)}">${esc(initial(k))}</span><span class="nm lbl"><b>${esc(who(k).name)}${S.ui.me === k ? ' (tú)' : ''}</b><small>🔥 ${streak(k)} · ${pointsFor(k, ws, we)} pts</small></span></div>`).join('')
+    + `<div class="syncline lbl"><i class="syncdot ${{ live: 'l', connecting: 'c', error: 'e', denied: 'e' }[Sync.status] || 'o'}"></i>${esc(syncText())}</div>`;
+}
+
+function renderAside() {
+  const el = $('#aside'); if (!el || !DESKTOP_ASIDE.matches) return;
+  const ws = startOfWeek(S.ui.tab === 'plan' || S.ui.tab === 'tiempo' ? cursor : todayISO()), we = addDays(ws, 6), t = todayISO();
+  const its = itemsBetween(ws, we), act = its.filter(isActive);
+  const me = S.ui.me || 'a', others = ['a', 'b'];
+  const days = [...Array(7)].map((_, i) => { const d = addDays(ws, i), per = {}; its.filter(x => x.date === d).forEach(x => { const m = spentMin(x).min; if (m) { const ar = cat(x.ev.cat).area; per[ar] = (per[ar] || 0) + m; } }); return { d, per, tot: sumBy(Object.values(per), v => v) }; });
+  const tot = sumBy(days, x => x.tot), mx = Math.max(60, ...days.map(x => x.tot));
+  const prevWs = addDays(ws, -7), prev = sumBy(itemsBetween(prevWs, addDays(prevWs, 6)), it => spentMin(it).min);
+  const badge = !tot ? '' : !prev ? '🌱 Semana nueva' : tot >= prev * 1.1 ? '👍 Más que la semana pasada' : tot >= prev * .9 ? '👍 Buen ritmo' : '🌤️ Menos que la semana pasada';
+  const done = act.filter(i => i.done).length, pctDone = act.length ? Math.round(done / act.length * 100) : 0;
+  const wr = weekResult(ws);
+  const areaRows = S.areas.map(a => { const l = act.filter(i => cat(i.ev.cat).area === a.id); return { a, n: l.length, d: l.filter(i => i.done).length }; }).filter(r => r.n);
+  const initials = ['a', 'b'].map(k => `<span class="av sm" style="background:${ownerColor(k)}">${esc(initial(k))}</span>`).join('');
+  el.innerHTML = `
+    <div class="acard prof"><span class="av xl" style="background:${ownerColor(me)}">${esc(initial(me))}</span><b>${esc(who(me).name)}</b><small>🔥 Racha de ${streak(me)} día${streak(me) === 1 ? '' : 's'}</small>
+      <div class="pair"><span>${initials}</span><small>${fmt(ws, { day: 'numeric', month: 'short' })} – ${fmt(we, { day: 'numeric', month: 'short' })}</small></div></div>
+    <div class="acard act"><div class="ah"><span>Actividad</span>${badge ? `<em>${esc(badge)}</em>` : ''}</div>
+      <div class="big">${tot ? fmtMin(tot) : '—'}</div>
+      <div class="bars">${days.map(x => `<div class="bcol ${x.d === t ? 'now' : ''}"><div class="stackv">${Object.entries(x.per).map(([k, v]) => `<i style="height:${v / mx * 100}%;background:${area(k).color}"></i>`).join('')}</div><small>${fmt(x.d, { weekday: 'narrow' }).toUpperCase()}</small></div>`).join('')}</div></div>
+    <div class="acard ring-card"><div class="ring" style="--p:${pctDone}"><b>${pctDone}%</b></div><div><b>${done} de ${act.length}</b><small>tareas hechas esta semana</small></div></div>
+    ${wr.A && wr.B ? `<div class="acard vs"><div class="ah"><span>Desafío</span>${wr.winner && wr.winner !== 'tie' ? `<em>👑 ${esc(who(wr.winner).name)}</em>` : ''}</div>${others.map(k => { const sc = k === 'a' ? wr.A : wr.B; return `<div class="vrow"><span>${esc(who(k).name)}</span><div class="bar"><div style="width:${sc.pct * 100}%;background:${ownerColor(k)}"></div></div><b>${pct100(sc.pct)}</b></div>`; }).join('')}</div>` : ''}
+    ${areaRows.length ? `<h4 class="ah2">Áreas de la semana</h4>` + areaRows.map(r => { const p = Math.round(r.d / r.n * 100); return `<div class="area-card" style="--c:${r.a.color};--p:${p}%"><span class="ai">${r.a.emoji}</span><div><b>${esc(r.a.name)}</b><small>${r.d} de ${r.n} hechas</small></div><span class="pc">${p}%</span></div>`; }).join('') : ''}`;
+}
+
 function render() {
   const tab = S.ui.tab;
   $('#planTools').style.display = tab === 'plan' || tab === 'tiempo' ? '' : 'none';
@@ -826,7 +869,7 @@ function render() {
   $('#fab').style.display = tab === 'ajustes' || tab === 'tiempo' ? 'none' : '';
   const [t, s] = periodTitle(); $('#periodTitle').textContent = t; $('#periodSub').textContent = s;
   $$('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.view === S.ui.view));
-  $$('.tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  $$('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   $('#layers').innerHTML = ['a', 'b', 'both'].map(k => `<button class="chip ${S.ui.layer === k ? 'on' : ''}" data-act="layer" data-k="${k}" style="--c:${ownerColor(k)}"><i></i>${esc(who(k).name)}</button>`).join('');
   const y = window.scrollY;
   const ro = Sync.canWrite === false ? `<div class="insight warn fade"><div class="emoji">👀</div><div><p>Solo puedes mirar<small>Pídele a Daniel que te dé acceso de editor para poder agregar y marcar cosas.</small></p></div></div>` : '';
@@ -835,6 +878,7 @@ function render() {
   if (Sync.status === 'denied') { main.innerHTML = `<div class="card fade"><h2>Correo no autorizado</h2><p style="margin:0 0 14px">${esc(Sync.email || '')} no está en la lista de Daniel y Cami. Entra con el correo que se registró en la configuración.</p><div class="actions"><button class="btn" data-act="signout">Cerrar sesión</button></div></div>`; paintSync(); return; }
   main.innerHTML = ro + (tab === 'tiempo' ? renderTiempo() : tab === 'logros' ? renderLogros() : tab === 'ajustes' ? renderAjustes() : S.ui.view === 'day' ? renderDay() : S.ui.view === 'week' ? renderWeek() : renderMonth());
   paintSync();
+  renderMembers(); renderAside();
   window.scrollTo(0, y);
 }
 
@@ -1066,7 +1110,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (el && actions[el.dataset.act]) { e.stopPropagation(); actions[el.dataset.act](el); return; }
   const lv = e.target.closest('[data-lv]'); if (lv) { S.ui.logrosView = lv.dataset.lv; save(); render(); return; }
   const v = e.target.closest('#viewSeg button'); if (v) { S.ui.view = v.dataset.view; save(); render(); return; }
-  const t = e.target.closest('.tabbar button'); if (t) { S.ui.tab = t.dataset.tab; save(); render(); window.scrollTo(0, 0); }
+  const t = e.target.closest('[data-tab]'); if (t) { S.ui.tab = t.dataset.tab; save(); render(); window.scrollTo(0, 0); }
 });
 
 document.addEventListener('change', e => {
@@ -1079,6 +1123,7 @@ document.addEventListener('change', e => {
   if (e.target.id === 'winStart' || e.target.id === 'winEnd') { S.settings[e.target.id] = e.target.value; save(); render(); }
 });
 document.addEventListener('input', e => { if (e.target.id === 'dayLimit') $('#dlv').textContent = e.target.value; });
+DESKTOP_ASIDE.addEventListener('change', () => render());
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
 // swipe horizontal para cambiar de período
